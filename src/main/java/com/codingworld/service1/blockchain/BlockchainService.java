@@ -1,18 +1,25 @@
 package com.codingworld.service1.blockchain;
 
 
-import org.web3j.crypto.Credentials;
+import org.springframework.stereotype.Service;
 import org.web3j.protocol.Web3j;
-import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.protocol.http.HttpService;
-import org.web3j.tx.RawTransactionManager;
-import org.web3j.tx.gas.ContractGasProvider;
-import org.web3j.tx.gas.StaticGasProvider;
-import org.web3j.utils.Numeric;
 
-import java.math.BigInteger;
-import java.util.Arrays;
+@Service
+public class BlockchainService {
 
+    private final Web3j web3j;
+
+    public BlockchainService() {
+        this.web3j = Web3j.build(new HttpService("http://127.0.0.1:7545")); // Ganache RPC
+    }
+
+    public Web3j getWeb3j() {
+        return web3j;
+    }
+}
+
+/*
 public class BlockchainService {
     // Configuration - SHOULD BE MOVED TO APPLICATION PROPERTIES!
     private static final String INFURA_URL = "https://polygon-mainnet.infura.io/v3/api_key_";
@@ -26,9 +33,11 @@ public class BlockchainService {
     private final Web3j web3j;
     private final ChatVerification contract;
 
-    public BlockchainService() {
+    /*
+
+ /*   public BlockchainService() {
         // Validate configuration first
-/*        if (INFURA_URL.contains("mainnet")) {
+*//*        if (INFURA_URL.contains("mainnet")) {
 
 
 
@@ -37,7 +46,7 @@ public class BlockchainService {
 
 
             throw new IllegalStateException("Mainnet detected! Should use testnet for development");
-        }*/
+        }*//*
 
         // Initialize with proper security
         this.web3j = Web3j.build(new HttpService(INFURA_URL));
@@ -60,9 +69,9 @@ public class BlockchainService {
                 txManager,
                 gasProvider
         );
-    }
+    }*/
 
-    public String storeMessageHash(String message, String receiverAddress) throws Exception {
+ /*   public String storeMessageHash(String message, String receiverAddress) throws Exception {
         // Validate inputs
         if (message == null || message.isEmpty()) {
             throw new IllegalArgumentException("Message cannot be empty");
@@ -122,7 +131,7 @@ public class BlockchainService {
         return address != null
                 && address.matches("^0x[a-fA-F0-9]{40}$");
     }
-}
+} /*
 /*
 import org.web3j.crypto.Credentials;
         import org.web3j.protocol.Web3j;

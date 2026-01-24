@@ -23,7 +23,8 @@ import java.util.Map;
 public class Service1Controller {
 
     @Autowired
-    private UserService userService;
+    private UserService userService;  // loose coupling
+        // UserService user= new UserService(); tight coupling
 
     @Autowired
     private ChatMessageService chatMessageService;
