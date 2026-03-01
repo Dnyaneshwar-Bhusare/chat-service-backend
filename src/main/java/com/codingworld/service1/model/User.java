@@ -1,6 +1,6 @@
 package com.codingworld.service1.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,9 +16,10 @@ public class User {
     private String username;
     private String email;
     private String mobileno;
-    @JsonIgnore
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
     private String profilePic;
+    private String ethAddress; // Ethereum address from Ganache
 
     // Constructor without password and profilePic for basic user info
     public User(String username, String email, String mobileno) {
@@ -35,6 +36,7 @@ public class User {
                 ", email='" + email + '\'' +
                 ", mobileno='" + mobileno + '\'' +
                 ", profilePic='" + profilePic + '\'' +
+                ", ethAddress='" + ethAddress + '\'' +
                 '}';
     }
 }

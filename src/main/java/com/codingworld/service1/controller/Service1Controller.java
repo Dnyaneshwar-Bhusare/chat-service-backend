@@ -32,6 +32,9 @@ public class Service1Controller {
     @Autowired
     private ChatWebSocketHandler webSocketHandler;
 
+    @Autowired
+    private BlockchainService blockchainService;
+
     @PostMapping("login")
     public Response login(@RequestBody Login login){
         try {
@@ -61,7 +64,8 @@ public class Service1Controller {
                     profilePicPath, // Complete profile pic path
                     "Welcome back!", // Welcome message
                     "active", // User status
-                    true // Login success flag
+                    true, // Login success flag
+                    authenticatedUser.getEthAddress() // Ethereum address for blockchain operations
                 );
 
                 return new Response("1", "Login successful", loginResponse);
@@ -124,21 +128,22 @@ public class Service1Controller {
     public Response sendMessage(@RequestBody ChatMessage message) {
         String decrypt = CryptoHelper.decrypt(message.getMessage(), message.getAlgo());
         System.out.println("Received Message: " + message);
-
-        System.out.println("Recrypted msg: " + decrypt);
-
-      //  BlockchainService blockchain = new BlockchainService();
+        System.out.println("Decrypted msg: " + decrypt);
 
         try {
-          //  String txHash = blockchain.storeMessageHash(message.getMessage(), "0x0fC5025C764cE34df352757e82f7B5c4Df39A836");
-            String txHash = "0x0fC5025C764cE34df352757e82f7B5c4Df39A836";
+            // Store message hash on Ganache blockchain
+            String txHash = blockchainService.storeMessageHash(
+                    message.getMessage(),
+                    message.getTo()   // receiver's Ethereum address (from Ganache)
+            );
+
             // Save chat message to database with transaction hash
             String chatId = chatMessageService.saveChatMessage(
                     message.getMessage(),
-                message.getFrom(),
-                message.getTo(),
-                message.getAlgo(),
-                txHash
+                    message.getFrom(),
+                    message.getTo(),
+                    message.getAlgo(),
+                    txHash
             );
 
             System.out.println("Chat message saved with ID: " + chatId + " and txHash: " + txHash);
@@ -148,7 +153,25 @@ public class Service1Controller {
             System.out.println(e.getCause());
             throw new RuntimeException(e);
         }
-        return new Response("1","ok","\"Message sent successfully!\"");
+        return new Response("1", "ok", "Message sent successfully!");
+    }
+
+    /**
+     * Verify a message against the blockchain — checks if the hash was stored and returns timestamp
+     */
+    @PostMapping("/verifyMessage")
+    public Response verifyMessage(@RequestBody ChatMessage message) {
+        try {
+            long timestamp = blockchainService.verifyMessageHash(message.getMessage());
+            if (timestamp > 0) {
+                return new Response("1", "Message is verified on blockchain", timestamp);
+            } else {
+                return new Response("0", "Message hash not found on blockchain", null);
+            }
+        } catch (Exception e) {
+            System.err.println("Blockchain verification error: " + e.getMessage());
+            return new Response("0", "Verification failed: " + e.getMessage(), null);
+        }
     }
 
     @GetMapping("/getMessages")
@@ -180,6 +203,23 @@ public class Service1Controller {
         } catch (Exception e) {
             System.err.println("Error getting messages for user " + userId + ": " + e.getMessage());
             return new Response("0", "Failed to get messages", null);
+        }
+    }
+
+    @PostMapping("/signUp")
+    public Response signUp(@RequestBody User user) {
+        try {
+            boolean registered = userService.registerUser(user);
+            if (registered) {
+                return new Response("1", "Sign up successful", null);
+            } else {
+                return new Response("0", "Email already exists", null);
+            }
+        } catch (IllegalArgumentException e) {
+            return new Response("0", e.getMessage(), null);
+        } catch (Exception e) {
+            System.err.println("Sign up error: " + e.getMessage());
+            return new Response("0", "Sign up failed due to server error", null);
         }
     }
 

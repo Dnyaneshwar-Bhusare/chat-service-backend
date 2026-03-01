@@ -133,4 +133,19 @@ public class UserService {
             throw new RuntimeException("Failed to get user for login: " + e.getMessage(), e);
         }
     }
+
+    /**
+     * Register a new user (sign up)
+     * @param user User object with details
+     * @return true if registration successful, false if email already exists
+     */
+    public boolean registerUser(User user) {
+        if (user == null || user.getEmail() == null || user.getEmail().trim().isEmpty()) {
+            throw new IllegalArgumentException("Email cannot be null or empty");
+        }
+        if (userExistsByEmail(user.getEmail())) {
+            return false; // Email already exists
+        }
+        return userDao.insertUser(user);
+    }
 }

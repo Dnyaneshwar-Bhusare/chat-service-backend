@@ -84,7 +84,7 @@ public class UserDao {
      * @return Complete User object with all details including profile_pic and UserID
      */
     public User getUserForLogin(String email) {
-        String sql = "SELECT UserID, username, email, mobileno, profile_pic FROM db_chat.users WHERE email = :email";
+        String sql = "SELECT UserID, username, email, mobileno, profile_pic, eth_address FROM db_chat.users WHERE email = :email";
 
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("email", email);
@@ -92,6 +92,24 @@ public class UserDao {
         List<User> users = namedParameterJdbcTemplate.query(sql, parameters, new UserLoginRowMapper());
 
         return users.isEmpty() ? null : users.get(0);
+    }
+
+    /**
+     * Insert a new user into the database (sign up)
+     * @param user User object with details
+     * @return true if inserted successfully, false otherwise
+     */
+    public boolean insertUser(User user) {
+        String sql = "INSERT INTO db_chat.users (username, email, password, profile_pic, mobileno) " +
+                "VALUES (:username, :email, :password, :profilePic, :mobileno)";
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("username", user.getUsername());
+        params.addValue("email", user.getEmail());
+        params.addValue("password", user.getPassword());
+        params.addValue("profilePic", user.getProfilePic());
+        params.addValue("mobileno", user.getMobileno());
+        int rows = namedParameterJdbcTemplate.update(sql, params);
+        return rows > 0;
     }
 
     /**
@@ -136,6 +154,7 @@ public class UserDao {
             user.setEmail(rs.getString("email"));
             user.setMobileno(rs.getString("mobileno"));
             user.setProfilePic(rs.getString("profile_pic"));
+            user.setEthAddress(rs.getString("eth_address"));
             return user;
         }
     }
