@@ -15,5 +15,5 @@ public class LoginResponse {
     private String status;
     private String userFlag;
     private Boolean isUserActive;
-    private String ethAddress; // Ethereum address from Ganache for blockchain operations
+    // ethAddress removed - backend manages blockchain internally, frontend never needs it
 }

@@ -3,11 +3,13 @@ package com.codingworld.service1.utils;
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.security.SecureRandom;
 import java.util.Base64;
 
 public class CryptoHelper {
     private static final String SECRET_KEY = "Bncoe@2025Vm@#9NzK&FdBwY6*MhC0Qx".substring(0, 16); // Ensure 16-byte AES key
     private static final String AES_ALGO = "AES/CBC/PKCS5Padding"; // Compatible with Dart PKCS7Padding
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom(); // ✅ Cryptographically secure random
 
     // 🔹 Encrypt a message
     public static String encrypt(String message, String algo) {
@@ -37,10 +39,11 @@ public class CryptoHelper {
         }
     }
 
-    // 🔹 AES Encryption (Match Dart Code)
+    // 🔹 AES Encryption — random IV every time
     private static String encryptAES(String message) {
         try {
-            byte[] iv = new byte[16]; // IV (Initialization Vector)
+            byte[] iv = new byte[16];
+            SECURE_RANDOM.nextBytes(iv); // ✅ Random IV per message, not all-zeros
             IvParameterSpec ivSpec = new IvParameterSpec(iv);
             SecretKeySpec keySpec = new SecretKeySpec(SECRET_KEY.getBytes(), "AES");
 
@@ -48,13 +51,14 @@ public class CryptoHelper {
             cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivSpec);
 
             byte[] encryptedBytes = cipher.doFinal(message.getBytes());
+            // Format: base64(iv):base64(ciphertext)
             return Base64.getEncoder().encodeToString(iv) + ":" + Base64.getEncoder().encodeToString(encryptedBytes);
         } catch (Exception e) {
             return "AES Encryption Error: " + e.getMessage();
         }
     }
 
-    // 🔹 AES Decryption (Fix IV Extraction)
+    // 🔹 AES Decryption — extracts IV from the cipher text prefix
     public static String decryptAES(String cipherText) {
         try {
             // Split IV and encrypted message

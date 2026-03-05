@@ -3,6 +3,7 @@ package com.codingworld.service1.service;
 import com.codingworld.service1.dao.UserDao;
 import com.codingworld.service1.model.User;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -15,6 +16,9 @@ public class UserService {
 
     @Autowired
     private UserDao userDao;
+
+    @Autowired
+    private BCryptPasswordEncoder passwordEncoder;
 
     /**
      * Get all users from the database
@@ -94,23 +98,34 @@ public class UserService {
         }
 
         try {
-            // Get user credentials from database
             User userCredentials = userDao.getUserCredentials(email.trim().toLowerCase());
 
             if (userCredentials == null) {
                 return null; // User not found
             }
 
-            // Validate password (in real app, you'd hash the password)
-            if (password.equals(userCredentials.getPassword())) {
-                // Password matches, get full user details for response
-                User fullUserDetails = userDao.getUserForLogin(email.trim().toLowerCase());
+            String storedPassword = userCredentials.getPassword();
+            boolean passwordMatches = false;
 
-                // Ensure UserID is set (get it from credentials if needed)
+            if (isBCryptHash(storedPassword)) {
+                // ✅ Already BCrypt — use BCrypt compare
+                passwordMatches = passwordEncoder.matches(password, storedPassword);
+            } else {
+                // ⚠️ Plain text password (legacy user) — compare directly
+                passwordMatches = password.equals(storedPassword);
+                if (passwordMatches) {
+                    // ✅ Auto-migrate: hash and update in DB immediately
+                    String hashed = passwordEncoder.encode(password);
+                    userDao.updatePassword(email.trim().toLowerCase(), hashed);
+                    System.out.println("🔄 Password migrated to BCrypt for: " + email);
+                }
+            }
+
+            if (passwordMatches) {
+                User fullUserDetails = userDao.getUserForLogin(email.trim().toLowerCase());
                 if (fullUserDetails != null && fullUserDetails.getUserId() == null) {
                     fullUserDetails.setUserId(userCredentials.getUserId());
                 }
-
                 return fullUserDetails;
             }
 
@@ -119,6 +134,17 @@ public class UserService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to authenticate user: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Checks if a stored password is already a BCrypt hash.
+     * BCrypt hashes always start with $2a$, $2b$, or $2y$
+     */
+    private boolean isBCryptHash(String password) {
+        return password != null &&
+               (password.startsWith("$2a$") ||
+                password.startsWith("$2b$") ||
+                password.startsWith("$2y$"));
     }
 
     /**
@@ -146,6 +172,8 @@ public class UserService {
         if (userExistsByEmail(user.getEmail())) {
             return false; // Email already exists
         }
+        // ✅ Hash password with BCrypt before saving to DB
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
         return userDao.insertUser(user);
     }
 }

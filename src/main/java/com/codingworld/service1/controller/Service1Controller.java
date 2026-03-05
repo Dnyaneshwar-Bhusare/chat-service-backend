@@ -64,8 +64,8 @@ public class Service1Controller {
                     profilePicPath, // Complete profile pic path
                     "Welcome back!", // Welcome message
                     "active", // User status
-                    true, // Login success flag
-                    authenticatedUser.getEthAddress() // Ethereum address for blockchain operations
+                    true // Login success flag
+                    // ethAddress removed - backend manages blockchain internally
                 );
 
                 return new Response("1", "Login successful", loginResponse);
@@ -130,29 +130,45 @@ public class Service1Controller {
         System.out.println("Received Message: " + message);
         System.out.println("Decrypted msg: " + decrypt);
 
+        // Try to store on blockchain — but treat it as non-fatal
+        String txHash = null;
         try {
-            // Store message hash on Ganache blockchain
-            String txHash = blockchainService.storeMessageHash(
-                    message.getMessage(),
-                    message.getTo()   // receiver's Ethereum address (from Ganache)
-            );
+            txHash = blockchainService.storeMessageHash(message.getMessage());
+            System.out.println("📦 Blockchain tx: " + txHash);
+        } catch (IllegalStateException e) {
+            // Contract not initialized (Ganache down or init failed) — just skip blockchain
+            System.err.println("⚠️ Blockchain not available (message will still be saved to DB): " + e.getMessage());
+        } catch (Exception e) {
+            String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
+            // Contract reverts (e.g. "Hash already exists") are expected — do NOT kill the contract
+            if (errMsg.contains("Hash already exists") || errMsg.contains("revert")) {
+                System.err.println("⚠️ Blockchain revert (duplicate/expected): " + errMsg);
+            } else if (errMsg.contains("invalid JUMP") || errMsg.contains("invalid opcode")
+                    || errMsg.contains("VM Exception")) {
+                // Genuine EVM/infrastructure failure — clear stale contract so it redeploys
+                //System.err.println("⚠️ Blockchain infrastructure failure — clearing contract: " + errMsg);
+                blockchainService.handleContractFailure();
+            } else {
+                // Unknown error — log it but do NOT kill the contract
+                System.err.println("⚠️ Blockchain transaction failed (message will still be saved to DB): " + errMsg);
+            }
+        }
 
-            // Save chat message to database with transaction hash
+        // Always save message to database regardless of blockchain result
+        try {
             String chatId = chatMessageService.saveChatMessage(
                     message.getMessage(),
                     message.getFrom(),
                     message.getTo(),
                     message.getAlgo(),
-                    txHash
+                    txHash   // null if blockchain failed — that's OK
             );
-
-            System.out.println("Chat message saved with ID: " + chatId + " and txHash: " + txHash);
-
+            System.out.println("Chat message saved with ID: " + chatId + (txHash != null ? " and txHash: " + txHash : " (no blockchain tx)"));
         } catch (Exception e) {
-            System.out.println(e.getMessage());
-            System.out.println(e.getCause());
-            throw new RuntimeException(e);
+            System.err.println("❌ Failed to save chat message to DB: " + e.getMessage());
+            return new Response("0", "Failed to save message: " + e.getMessage(), null);
         }
+
         return new Response("1", "ok", "Message sent successfully!");
     }
 

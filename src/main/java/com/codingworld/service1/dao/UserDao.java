@@ -113,6 +113,17 @@ public class UserDao {
     }
 
     /**
+     * Update password for a user (used for BCrypt migration)
+     */
+    public void updatePassword(String email, String hashedPassword) {
+        String sql = "UPDATE db_chat.users SET password = :password WHERE email = :email";
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("password", hashedPassword);
+        params.addValue("email", email);
+        namedParameterJdbcTemplate.update(sql, params);
+    }
+
+    /**
      * RowMapper to map database rows to User objects
      */
     private static class UserRowMapper implements RowMapper<User> {
