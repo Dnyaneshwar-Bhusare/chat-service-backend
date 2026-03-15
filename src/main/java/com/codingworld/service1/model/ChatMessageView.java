@@ -20,4 +20,5 @@ public class ChatMessageView {
     private String algo;
     private LocalDateTime createdTs;
     private String txHash;
+    private String publicKey; // Sender's public key
 }

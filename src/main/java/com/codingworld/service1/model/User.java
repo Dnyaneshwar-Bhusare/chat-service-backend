@@ -20,7 +20,7 @@ public class User {
     private String password;
     private String profilePic;
     private String ethAddress; // Ethereum address from Ganache
-
+    private String publicKey;
     // Constructor without password and profilePic for basic user info
     public User(String username, String email, String mobileno) {
         this.username = username;

@@ -25,7 +25,7 @@ public class UserDao {
      * @return List of User objects
      */
     public List<User> getAllUsers() {
-        String sql = "SELECT UserID,username, email, mobileno FROM db_chat.users";
+        String sql = "SELECT UserID, username, email, mobileno, public_key FROM db_chat.users where public_key is not null";
 
         return namedParameterJdbcTemplate.query(sql, new MapSqlParameterSource(), new UserRowMapper());
     }
@@ -36,7 +36,7 @@ public class UserDao {
      * @return User object or null if not found
      */
     public User getUserByEmail(String email) {
-        String sql = "SELECT username, email, mobileno FROM db_chat.users WHERE email = :email";
+        String sql = "SELECT username, email, mobileno, public_key FROM db_chat.users WHERE email = :email";
 
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("email", email);
@@ -52,7 +52,7 @@ public class UserDao {
      * @return User object or null if not found
      */
     public User getUserByUsername(String username) {
-        String sql = "SELECT username, email, mobileno FROM db_chat.users WHERE username = :username";
+        String sql = "SELECT username, email, mobileno, public_key FROM db_chat.users WHERE username = :username";
 
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("username", username);
@@ -68,7 +68,7 @@ public class UserDao {
      * @return User object with email, password, and profile_pic, or null if not found
      */
     public User getUserCredentials(String email) {
-        String sql = "SELECT UserID, email, password, profile_pic FROM db_chat.users WHERE email = :email";
+        String sql = "SELECT UserID, email, password, profile_pic, public_key FROM db_chat.users WHERE email = :email";
 
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("email", email);
@@ -84,7 +84,7 @@ public class UserDao {
      * @return Complete User object with all details including profile_pic and UserID
      */
     public User getUserForLogin(String email) {
-        String sql = "SELECT UserID, username, email, mobileno, profile_pic, eth_address FROM db_chat.users WHERE email = :email";
+        String sql = "SELECT UserID, username, email, mobileno, profile_pic, eth_address, public_key FROM db_chat.users WHERE email = :email";
 
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("email", email);
@@ -100,14 +100,15 @@ public class UserDao {
      * @return true if inserted successfully, false otherwise
      */
     public boolean insertUser(User user) {
-        String sql = "INSERT INTO db_chat.users (username, email, password, profile_pic, mobileno) " +
-                "VALUES (:username, :email, :password, :profilePic, :mobileno)";
+        String sql = "INSERT INTO db_chat.users (username, email, password, profile_pic, mobileno, public_key) " +
+                "VALUES (:username, :email, :password, :profilePic, :mobileno, :publicKey)";
         MapSqlParameterSource params = new MapSqlParameterSource();
         params.addValue("username", user.getUsername());
         params.addValue("email", user.getEmail());
         params.addValue("password", user.getPassword());
         params.addValue("profilePic", user.getProfilePic());
         params.addValue("mobileno", user.getMobileno());
+        params.addValue("publicKey", user.getPublicKey());
         int rows = namedParameterJdbcTemplate.update(sql, params);
         return rows > 0;
     }
@@ -124,6 +125,17 @@ public class UserDao {
     }
 
     /**
+     * Update the public key for a user by email
+     */
+    public void updateUserPublicKey(String email, String publicKey) {
+        String sql = "UPDATE db_chat.users SET public_key = :publicKey WHERE email = :email";
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("publicKey", publicKey);
+        params.addValue("email", email);
+        namedParameterJdbcTemplate.update(sql, params);
+    }
+
+    /**
      * RowMapper to map database rows to User objects
      */
     private static class UserRowMapper implements RowMapper<User> {
@@ -134,6 +146,7 @@ public class UserDao {
             user.setUsername(rs.getString("username"));
             user.setEmail(rs.getString("email"));
             user.setMobileno(rs.getString("mobileno"));
+            user.setPublicKey(rs.getString("public_key")); // Added mapping for publicKey
             return user;
         }
     }
@@ -149,6 +162,7 @@ public class UserDao {
             user.setEmail(rs.getString("email"));
             user.setPassword(rs.getString("password"));
             user.setProfilePic(rs.getString("profile_pic"));
+            user.setPublicKey(rs.getString("public_key")); // Added mapping for publicKey
             return user;
         }
     }
@@ -166,6 +180,7 @@ public class UserDao {
             user.setMobileno(rs.getString("mobileno"));
             user.setProfilePic(rs.getString("profile_pic"));
             user.setEthAddress(rs.getString("eth_address"));
+            user.setPublicKey(rs.getString("public_key")); // Added mapping for publicKey
             return user;
         }
     }

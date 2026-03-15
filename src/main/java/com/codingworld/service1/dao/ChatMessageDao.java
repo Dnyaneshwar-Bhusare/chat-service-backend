@@ -57,10 +57,11 @@ public class ChatMessageDao {
      * @return List of chat messages for the user
      */
     public List<ChatMessageView> getMessagesForUser(String userId) {
-        String sql = "SELECT chat_id, message, `from`, `to`, algo, created_ts, tx_hash " +
-                     "FROM db_chat.chat_table " +
-                     "WHERE `to` = :userId OR `from` = :userId " +
-                     "ORDER BY created_ts DESC";
+        String sql = "SELECT c.chat_id, c.message, c.`from`, c.`to`, c.algo, c.created_ts, c.tx_hash, u.public_key as public_key " +
+                     "FROM db_chat.chat_table c " +
+                     "LEFT JOIN db_chat.users u ON c.`from` = u.UserID " +
+                     "WHERE c.`to` = :userId OR c.`from` = :userId " +
+                     "ORDER BY c.created_ts DESC";
 
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("userId", userId);
@@ -100,6 +101,7 @@ public class ChatMessageDao {
             message.setAlgo(rs.getString("algo"));
             message.setCreatedTs(rs.getTimestamp("created_ts").toLocalDateTime());
             message.setTxHash(rs.getString("tx_hash"));
+            message.setPublicKey(rs.getString("public_key")); // Map sender's public key
             return message;
         }
     }

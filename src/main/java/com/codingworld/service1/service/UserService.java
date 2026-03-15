@@ -137,6 +137,58 @@ public class UserService {
     }
 
     /**
+     * Authenticate user login credentials with public key
+     * @param email User's email
+     * @param password User's password
+     * @param publicKey User's public key
+     * @return User object if login successful, null if failed
+     */
+    public User authenticateUser(String email, String password, String publicKey) {
+        if (email == null || email.trim().isEmpty()) {
+            throw new IllegalArgumentException("Email cannot be null or empty");
+        }
+        if (password == null || password.trim().isEmpty()) {
+            throw new IllegalArgumentException("Password cannot be null or empty");
+        }
+
+        try {
+            User userCredentials = userDao.getUserCredentials(email.trim().toLowerCase());
+
+            if (userCredentials == null) {
+                return null; // User not found
+            }
+
+            String storedPassword = userCredentials.getPassword();
+            boolean passwordMatches = false;
+
+            if (isBCryptHash(storedPassword)) {
+                passwordMatches = passwordEncoder.matches(password, storedPassword);
+            } else {
+                passwordMatches = password.equals(storedPassword);
+                if (passwordMatches) {
+                    String hashed = passwordEncoder.encode(password);
+                    userDao.updatePassword(email.trim().toLowerCase(), hashed);
+                    System.out.println("🔄 Password migrated to BCrypt for: " + email);
+                }
+            }
+
+            if (passwordMatches) {
+                // Update public key if provided
+                if (publicKey != null && !publicKey.trim().isEmpty()) {
+                    userDao.updateUserPublicKey(email.trim().toLowerCase(), publicKey);
+                }
+                // Return full user details for login response
+                return userDao.getUserForLogin(email.trim().toLowerCase());
+            } else {
+                return null;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
      * Checks if a stored password is already a BCrypt hash.
      * BCrypt hashes always start with $2a$, $2b$, or $2y$
      */

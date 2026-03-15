@@ -1,6 +1,7 @@
 package com.codingworld.service1.service;
 
 import com.codingworld.service1.dao.ChatMessageDao;
+import com.codingworld.service1.dao.UserDao;
 import com.codingworld.service1.model.ChatMessageEntity;
 import com.codingworld.service1.model.ChatMessageView;
 import com.codingworld.service1.websocket.ChatWebSocketHandler;
@@ -23,6 +24,9 @@ public class ChatMessageService {
 
     @Autowired
     private ChatWebSocketHandler webSocketHandler;
+
+    @Autowired
+    private UserDao userDao;
 
     /**
      * Save chat message with transaction hash to database and send real-time notification
@@ -47,10 +51,18 @@ public class ChatMessageService {
             // Save to database and return generated chat_id
             String chatId = chatMessageDao.saveChatMessage(chatMessage);
 
+            // Fetch sender's public key
+            String publicKey = null;
+            try {
+                publicKey = userDao.getUserByUsername(fromUser).getPublicKey();
+            } catch (Exception ex) {
+                // If user not found or error, leave publicKey as null
+            }
+
             // Send real-time notification to recipient if connected
             if (webSocketHandler.isUserConnected(toUser)) {
                 ChatMessageView messageView = new ChatMessageView(
-                    chatId, message, fromUser, toUser, algo, chatMessage.getCreatedTs(), txHash
+                    chatId, message, fromUser, toUser, algo, chatMessage.getCreatedTs(), txHash, publicKey
                 );
 
                 // Create map using Java 8 compatible approach

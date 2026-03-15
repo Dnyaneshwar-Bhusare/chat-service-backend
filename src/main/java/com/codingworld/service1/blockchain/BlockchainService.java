@@ -192,7 +192,7 @@ public class BlockchainService {
             throw new IllegalStateException("Blockchain contract is not initialized");
         }
         byte[] hashBytes = toBytes32(Hash.sha3(message));
-        TransactionReceipt receipt = contract.storeHash(hashBytes, deployerAddress).send();
+        TransactionReceipt receipt =contract.storeHash(hashBytes, deployerAddress).send();
         String txHash = receipt.getTransactionHash();
         System.out.println("📦 Message hash stored on blockchain. txHash: " + txHash);
         return txHash;
