@@ -37,10 +37,11 @@ public class ChatMessageService {
      * @param txHash Blockchain transaction hash
      * @return Generated chat_id
      */
-    public String saveChatMessage(String message, String fromUser, String toUser, String algo, String txHash) {
+    public String saveChatMessage(String messageToSelf,String message, String fromUser, String toUser, String algo, String txHash) {
         try {
             // Create chat message entity
             ChatMessageEntity chatMessage = new ChatMessageEntity();
+            chatMessage.setMessageToSelf(messageToSelf);
             chatMessage.setMessage(message);
             chatMessage.setFromUser(fromUser);
             chatMessage.setToUser(toUser);
@@ -85,9 +86,9 @@ public class ChatMessageService {
      * @param userId User ID to get messages for
      * @return List of chat messages
      */
-    public List<ChatMessageView> getMessagesForUser(String userId) {
+    public List<ChatMessageView> getMessagesForUser(String userId,String sender, String reciver) {
         try {
-            return chatMessageDao.getMessagesForUser(userId);
+            return chatMessageDao.getMessagesForUser(userId,sender, reciver);
         } catch (Exception e) {
             throw new RuntimeException("Failed to get messages for user: " + e.getMessage(), e);
         }

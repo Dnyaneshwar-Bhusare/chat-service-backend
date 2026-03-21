@@ -42,6 +42,13 @@ public class NotificationDao {
                 notification.setMessage("Login activity detected at " + (ts != null ? ts : "unknown time"));
             }
         }
+
+        if ("login".equalsIgnoreCase(type)) {
+            for (Notification notification : notifications) {
+                String ts = notification.getTimestamp();
+                notification.setMessage("MITM Attack detected at " + (ts != null ? ts : "unknown time"));
+            }
+        }
         return notifications;
     }
 

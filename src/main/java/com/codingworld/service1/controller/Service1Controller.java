@@ -15,10 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/")
@@ -121,20 +118,12 @@ public class Service1Controller {
     }
 
 
-    @GetMapping("/friends")
-    public ChatList getFriends() {
-        
-        List<String> list = Arrays.asList("John Doe", "Alice Smith", "Bob Johnson", "Emma Brown", "Charlie Davis","Dnyaneshwar Bhusare","John Doe", "Alice Smith", "Bob Johnson", "Emma Brown", "Charlie Davis","Dnyaneshwar Bhusare","John Doe", "Alice Smith", "Bob Johnson", "Emma Brown", "Charlie Davis","Dnyaneshwar Bhusare","John Doe", "Alice Smith", "Bob Johnson", "Emma Brown", "Charlie Davis","Dnyaneshwar Bhusare");
-        ChatList chatList = new ChatList();
-        chatList.setFriends(list);
-        return chatList;
-    }
 
     @PostMapping("/sendMessage")
     public Response sendMessage(@RequestBody ChatMessage message) {
-        String decrypt = CryptoHelper.decrypt(message.getMessage(), message.getAlgo());
+       // String decrypt = CryptoHelper.decrypt(message.getMessage(), message.getAlgo());
         System.out.println("Received Message: " + message);
-        System.out.println("Decrypted msg: " + decrypt);
+      //  System.out.println("Decrypted msg: " + decrypt);
 
         // Try to store on blockchain — but treat it as non-fatal
         String txHash = null;
@@ -163,6 +152,7 @@ public class Service1Controller {
         // Always save message to database regardless of blockchain result
         try {
             String chatId = chatMessageService.saveChatMessage(
+                    message.getMessageToSelf(),
                     message.getMessage(),
                     message.getFrom(),
                     message.getTo(),
@@ -196,31 +186,18 @@ public class Service1Controller {
         }
     }
 
-    @GetMapping("/getMessages")
-    public List<GetMessages> getMesages(@RequestParam("from") String from) {
-        System.out.println("getting all the messages from "+from);
-        List<GetMessages> messages= new ArrayList<>();
-        GetMessages messages1=new GetMessages();
-        GetMessages messages2 = new GetMessages();
-        messages1.setSent(true);
-        messages1.setMessage("hi");
-        messages1.setTs("yesterday");
-        messages2.setSent(false);
-        messages2.setMessage("hello");
-        messages2.setTs("yesterday");
-        messages.add(messages1);
-        messages.add(messages2);
-        return messages;
-    }
 
     /**
      * Get messages for a specific user using your SQL query
      * SELECT chat_id,message,`from`,`to`,algo,created_ts,tx_hash from db_chat.chat_table where `to`=1 or `from`=1
      */
     @GetMapping("/getUserMessages/{userId}")
-    public Response getUserMessages(@PathVariable String userId) {
+    public Response getUserMessages(@PathVariable String userId,
+                                    @RequestParam(required = false) String sender,
+                                    @RequestParam(required = false) String receiver) {
+
         try {
-            List<ChatMessageView> messages = chatMessageService.getMessagesForUser(userId);
+            List<ChatMessageView> messages = chatMessageService.getMessagesForUser(userId, sender, receiver);
             return new Response("1", "Messages retrieved successfully", messages);
         } catch (Exception e) {
             System.err.println("Error getting messages for user " + userId + ": " + e.getMessage());

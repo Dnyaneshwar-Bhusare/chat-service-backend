@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 public class ChatMessageEntity {
     private String chatId;
     private String message;
+    private String messageToSelf;
     private String fromUser;
     private String toUser;
     private String algo;

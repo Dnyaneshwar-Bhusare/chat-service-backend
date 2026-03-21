@@ -8,6 +8,7 @@ import lombok.Data;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ChatMessage {
     private String message;
+    private String messageToSelf;
     private String from;
     private String to;
     private String algo;
