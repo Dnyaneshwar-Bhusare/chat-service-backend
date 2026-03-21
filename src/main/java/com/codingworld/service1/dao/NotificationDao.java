@@ -30,25 +30,31 @@ public class NotificationDao {
     }
 
     public List<Notification> getNotificationsByTypeAndRefId(String type, String refId) {
-        String sql = "SELECT notification_type, notification_ref_id, timestamp FROM notification_table WHERE notification_type = :type AND notification_ref_id = :refId";
+        String sql = "SELECT notification_type, notification_ref_id, timestamp FROM notification_table \n" +
+                "WHERE notification_type = 'LOGIN'\n" +
+                "AND notification_ref_id = :refId\n" +
+                "union all\n" +
+                "SELECT notification_type, notification_ref_id, timestamp FROM notification_table n\n" +
+                "inner join chat_table  c on  c.chat_id=n.notification_ref_id \n" +
+                "WHERE \n" +
+                " notification_type = 'DECRYPT_FAILURE' and \n" +
+                "c.`from`  = :refId or c.`to`=:refId";
         MapSqlParameterSource params = new MapSqlParameterSource();
         params.addValue("type", type);
         params.addValue("refId", refId);
         List<Notification> notifications = jdbcTemplate.query(sql, params, new NotificationRowMapper());
         // If type is 'login', add a message to each notification
-        if ("login".equalsIgnoreCase(type)) {
+
             for (Notification notification : notifications) {
+                if ("DECRYPT_FAILURE".equalsIgnoreCase(notification.getNotificationType())) {
                 String ts = notification.getTimestamp();
-                notification.setMessage("Login activity detected at " + (ts != null ? ts : "unknown time"));
+                notification.setMessage("MITM Attack detected at " + (ts != null ? ts : "unknown time"));
+            }else if ("LOGIN".equalsIgnoreCase(notification.getNotificationType())) {
+                String ts = notification.getTimestamp();
+                notification.setMessage("Login Activity detected at " + (ts != null ? ts : "unknown time"));
             }
         }
 
-        if ("login".equalsIgnoreCase(type)) {
-            for (Notification notification : notifications) {
-                String ts = notification.getTimestamp();
-                notification.setMessage("MITM Attack detected at " + (ts != null ? ts : "unknown time"));
-            }
-        }
         return notifications;
     }
 
