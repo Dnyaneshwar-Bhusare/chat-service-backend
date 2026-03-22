@@ -123,6 +123,23 @@ public class ChatMessageDao {
     }
 
     /**
+     * Fetch a single message row by its chat_id.
+     * Returns null if not found.
+     */
+    public ChatMessageView getMessageByChatId(String chatId) {
+        String sql = "SELECT c.chat_id, c.message AS message_for_sender, " +
+                     "c.`from`, c.`to`, c.algo, c.created_ts, c.tx_hash, " +
+                     "u.public_key " +
+                     "FROM db_chat.chat_table c " +
+                     "LEFT JOIN db_chat.users u ON c.`from` = u.UserID " +
+                     "WHERE c.chat_id = :chatId";
+
+        MapSqlParameterSource params = new MapSqlParameterSource("chatId", chatId);
+        List<ChatMessageView> results = namedParameterJdbcTemplate.query(sql, params, new ChatMessageViewRowMapper());
+        return results.isEmpty() ? null : results.get(0);
+    }
+
+    /**
      * RowMapper for ChatMessageView
      */
     private static class ChatMessageViewRowMapper implements RowMapper<ChatMessageView> {

@@ -107,4 +107,16 @@ public class ChatMessageService {
             throw new RuntimeException("Failed to get new messages: " + e.getMessage(), e);
         }
     }
+
+    /**
+     * Fetch a single message by its chat_id.
+     * Returns null if not found.
+     */
+    public ChatMessageView getMessageByChatId(String chatId) {
+        try {
+            return chatMessageDao.getMessageByChatId(chatId);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get message by chatId: " + e.getMessage(), e);
+        }
+    }
 }

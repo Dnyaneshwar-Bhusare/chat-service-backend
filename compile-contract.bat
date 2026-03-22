@@ -1,5 +1,8 @@
 @echo off
 echo Compiling ChatVerification.sol with --evm-version paris...
+echo NOTE: Ganache is started with --hardfork paris (see start-ganache.bat)
+echo       The EVM version here MUST match that hardfork.
+echo.
 
 set SOL_FILE=src\main\java\com\codingworld\service1\blockchain\ChatVerification.sol
 set OUT_DIR=src\main\java\com\codingworld\service1\blockchain
@@ -22,4 +25,3 @@ echo.
 echo Now run web3j to regenerate the Java wrapper:
 echo web3j generate solidity -b "%OUT_DIR%\solc-out\ChatVerification.bin" -a "%OUT_DIR%\solc-out\ChatVerification.abi" -o src\main\java -p com.codingworld.service1.blockchain
 pause
-

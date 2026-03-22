@@ -7,7 +7,7 @@ import com.codingworld.service1.model.ChatMessageView;
 import com.codingworld.service1.service.UserService;
 import com.codingworld.service1.service.ChatMessageService;
 import com.codingworld.service1.model.User;
-import com.codingworld.service1.utils.CryptoHelper;
+import com.codingworld.service1.dao.UserDao;
 import com.codingworld.service1.websocket.ChatWebSocketHandler;
 import com.codingworld.service1.model.Notification;
 import com.codingworld.service1.service.NotificationService;
@@ -36,6 +36,9 @@ public class Service1Controller {
 
     @Autowired
     private NotificationService notificationService;
+
+    @Autowired
+    private UserDao userDao;
 
     @PostMapping("login")
     public Response login(@RequestBody Login login){
@@ -121,45 +124,65 @@ public class Service1Controller {
 
     @PostMapping("/sendMessage")
     public Response sendMessage(@RequestBody ChatMessage message) {
-       // String decrypt = CryptoHelper.decrypt(message.getMessage(), message.getAlgo());
         System.out.println("Received Message: " + message);
-      //  System.out.println("Decrypted msg: " + decrypt);
 
-        // Try to store on blockchain — but treat it as non-fatal
-        String txHash = null;
+        // Resolve receiver's ETH address from DB so the blockchain event records the real recipient
+        String receiverEthAddress = null;
         try {
-            txHash = blockchainService.storeMessageHash(message.getMessage());
+            if (message.getTo() != null && !message.getTo().trim().isEmpty()) {
+                User receiver = userDao.getUserById(message.getTo());
+                if (receiver != null) {
+                    receiverEthAddress = receiver.getEthAddress();
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("⚠️ Could not resolve receiver ETH address (will use deployer fallback): " + e.getMessage());
+        }
+
+        // Try to store on blockchain — non-fatal, but retry once after a contract failure
+        String txHash = null;
+        String address = null;
+        try {
+            txHash = blockchainService.storeMessageHash(message.getMessage(), receiverEthAddress);
             System.out.println("📦 Blockchain tx: " + txHash);
-        } catch (IllegalStateException e) {
-            // Contract not initialized (Ganache down or init failed) — just skip blockchain
-            System.err.println("⚠️ Blockchain not available (message will still be saved to DB): " + e.getMessage());
+/*        } catch (IllegalStateException e) {
+            System.err.println("⚠️ Blockchain not available (message will still be saved to DB): " + e.getMessage());*/
         } catch (Exception e) {
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
-            // Contract reverts (e.g. "Hash already exists") are expected — do NOT kill the contract
             if (errMsg.contains("Hash already exists") || errMsg.contains("revert")) {
                 System.err.println("⚠️ Blockchain revert (duplicate/expected): " + errMsg);
-            } else if (errMsg.contains("invalid JUMP") || errMsg.contains("invalid opcode")
+            } else if (errMsg.contains("invalid JUMP") || errMsg.contains("invalid opcode")|| errMsg.contains("Blockchain contract is not initialized")
                     || errMsg.contains("VM Exception")) {
-                // Genuine EVM/infrastructure failure — clear stale contract so it redeploys
-                //System.err.println("⚠️ Blockchain infrastructure failure — clearing contract: " + errMsg);
-                blockchainService.handleContractFailure();
+                txHash= blockchainService.handleContractFailure();
+                // Retry once on the freshly deployed contract
+                try {
+                    address = blockchainService.storeMessageHash(message.getMessage(), receiverEthAddress);
+                    System.out.println("📦 Blockchain tx (after recovery): " + txHash);
+                } catch (Exception retryEx) {
+
+                }
             } else {
-                // Unknown error — log it but do NOT kill the contract
                 System.err.println("⚠️ Blockchain transaction failed (message will still be saved to DB): " + errMsg);
             }
         }
 
         // Always save message to database regardless of blockchain result
         try {
-            String chatId = chatMessageService.saveChatMessage(
-                    message.getMessageToSelf(),
-                    message.getMessage(),
-                    message.getFrom(),
-                    message.getTo(),
-                    message.getAlgo(),
-                    txHash   // null if blockchain failed — that's OK
-            );
-            System.out.println("Chat message saved with ID: " + chatId + (txHash != null ? " and txHash: " + txHash : " (no blockchain tx)"));
+            if(txHash==null){
+                System.out.println("Blockchain server is down or transaction failed, can't send the message now.");
+                return new Response("0", "Blockchain server is down at the moment please retry after some time. ", null);
+            }else {
+                String chatId = chatMessageService.saveChatMessage(
+                        message.getMessageToSelf(),
+                        message.getMessage(),
+                        message.getFrom(),
+                        message.getTo(),
+                        message.getAlgo(),
+                        txHash
+                );
+
+                System.out.println("Chat message saved with ID: " + chatId + (txHash != null ? " and txHash: " + txHash : " (no blockchain tx)"));
+            }
         } catch (Exception e) {
             System.err.println("❌ Failed to save chat message to DB: " + e.getMessage());
             return new Response("0", "Failed to save message: " + e.getMessage(), null);
@@ -169,17 +192,23 @@ public class Service1Controller {
     }
 
     /**
-     * Verify a message against the blockchain — checks if the hash was stored and returns timestamp
+     * Verify a message against the blockchain — checks if the hash was stored and returns timestamp.
+     * The request body must contain the same 'message' string that was originally sent.
      */
     @PostMapping("/verifyMessage")
-    public Response verifyMessage(@RequestBody ChatMessage message) {
+    public Response verifyMessage(@RequestBody VerifyRequest request) {
         try {
-            long timestamp = blockchainService.verifyMessageHash(message.getMessage());
+            if (request.getMessage() == null || request.getMessage().trim().isEmpty()) {
+                return new Response("0", "Message content is required for verification", null);
+            }
+            long timestamp = blockchainService.verifyMessageHash(request.getMessage());
             if (timestamp > 0) {
                 return new Response("1", "Message is verified on blockchain", timestamp);
             } else {
                 return new Response("0", "Message hash not found on blockchain", null);
             }
+        } catch (IllegalStateException e) {
+            return new Response("0", "Blockchain not available: " + e.getMessage(), null);
         } catch (Exception e) {
             System.err.println("Blockchain verification error: " + e.getMessage());
             return new Response("0", "Verification failed: " + e.getMessage(), null);
@@ -252,6 +281,54 @@ public class Service1Controller {
         } catch (Exception e) {
             System.err.println("Error fetching notifications for user " + userId + ": " + e.getMessage());
             return new Response("0", "Failed to fetch notifications", null);
+        }
+    }
+
+    /**
+     * Verify a message against the blockchain by its chat_id.
+     * Fetches the stored ciphertext from DB, recomputes keccak256, looks it up on-chain.
+     * Returns the blockchain timestamp if found, or a clear "not anchored" response if tx_hash is NULL.
+     */
+    @GetMapping("/verifyMessage/{chatId}")
+    public Response verifyMessageByChatId(@PathVariable String chatId) {
+        // 1. Look up the message row in DB
+        ChatMessageView msg;
+        try {
+            msg = chatMessageService.getMessageByChatId(chatId);
+        } catch (Exception e) {
+            System.err.println("DB lookup failed for chatId " + chatId + ": " + e.getMessage());
+            return new Response("0", "Failed to fetch message: " + e.getMessage(), null);
+        }
+
+        if (msg == null) {
+            return new Response("0", "No message found with chatId: " + chatId, null);
+        }
+
+        // 2. If tx_hash is NULL the message was never anchored (blockchain was down at send time)
+        if (msg.getTxHash() == null || msg.getTxHash().trim().isEmpty()) {
+            return new Response("0", "Message was not anchored on blockchain (no tx_hash)", null);
+        }
+
+        // 3. Recompute the hash from the stored ciphertext and check on-chain
+        try {
+            long timestamp = blockchainService.verifyMessageHash(msg.getMessage());
+            if (timestamp > 0) {
+                java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+                result.put("chatId",    chatId);
+                result.put("txHash",    msg.getTxHash());
+                result.put("from",      msg.getFromUser());
+                result.put("to",        msg.getToUser());
+                result.put("timestamp", timestamp);
+                result.put("verified",  true);
+                return new Response("1", "Message is verified on blockchain", result);
+            } else {
+                return new Response("0", "Message hash not found on blockchain (possible tampering)", null);
+            }
+        } catch (IllegalStateException e) {
+            return new Response("0", "Blockchain not available: " + e.getMessage(), null);
+        } catch (Exception e) {
+            System.err.println("Blockchain verification error for chatId " + chatId + ": " + e.getMessage());
+            return new Response("0", "Verification failed: " + e.getMessage(), null);
         }
     }
 

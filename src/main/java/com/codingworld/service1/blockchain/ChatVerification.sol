@@ -21,4 +21,3 @@ contract ChatVerification {
         return messageTimestamps[hash];
     }
 }
-

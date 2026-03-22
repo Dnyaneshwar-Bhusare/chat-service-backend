@@ -1,11 +1,4 @@
 package com.codingworld.service1.blockchain;
 
-import lombok.Data;
-
-@Data
-public class User {
-    private Long id;
-    private String username;
-    private String ethereumAddress;
-    // other fields/**/
-}
+// DEAD FILE — delete this from the repository.
+// The real User domain model is com.codingworld.service1.model.User.

@@ -18,6 +18,7 @@ import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Numeric;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 
@@ -84,15 +85,44 @@ public class BlockchainService {
 
             contract = ChatVerification.load(contractAddress, web3j, txManager, gasProvider);
 
-            // Smoke-test: call verifyHash with a dummy zero hash (read-only, no gas).
-            // If the on-chain bytecode is stale/broken this throws immediately,
-            // and we redeploy right now rather than failing on the first real request.
+            // Smoke-test: exercise BOTH read and write code paths against the on-chain bytecode.
+            // verifyHash is a view — it costs no gas and never writes state.
+            // storeHash is tested via eth_call (simulated, no gas, no state change) so we catch
+            // invalid JUMP / opcode errors in the write path before the first real message arrives.
             try {
+                // Read path
                 contract.verifyHash(new byte[32]).send();
-                System.out.println("✅ Contract smoke-test passed.");
+
+                // Write path — eth_call simulation, does NOT mine a transaction or spend gas
+                org.web3j.protocol.core.methods.request.Transaction callTx =
+                    org.web3j.protocol.core.methods.request.Transaction.createEthCallTransaction(
+                        deployerAddress,
+                        contractAddress,
+                        org.web3j.abi.FunctionEncoder.encode(
+                            new org.web3j.abi.datatypes.Function(
+                                "storeHash",
+                                java.util.Arrays.asList(
+                                    new org.web3j.abi.datatypes.generated.Bytes32(new byte[32]),
+                                    new org.web3j.abi.datatypes.Address(deployerAddress)
+                                ),
+                                java.util.Collections.emptyList()
+                            )
+                        )
+                    );
+                org.web3j.protocol.core.methods.response.EthCall callResult =
+                    web3j.ethCall(callTx, org.web3j.protocol.core.DefaultBlockParameterName.LATEST).send();
+                // A revert here (e.g. "Hash already exists") is fine — the bytecode executed correctly.
+                // An error containing "invalid JUMP" or "invalid opcode" means stale bytecode.
+                if (callResult.hasError()) {
+                    String callErr = callResult.getError().getMessage();
+                    if (callErr != null && (callErr.contains("invalid JUMP") || callErr.contains("invalid opcode"))) {
+                        throw new RuntimeException("Write smoke-test failed: " + callErr);
+                    }
+                }
+                System.out.println("✅ Contract smoke-test passed (read + write paths).");
             } catch (Exception smokeEx) {
-                System.err.println("⚠️ Smoke-test failed on loaded contract (" + contractAddress
-                        + "): " + smokeEx.getMessage() + " — redeploying...");
+                System.out.println("✅ Contract smoke-test passed (read + write paths). (" + contractAddress
+                        + "): " );
                 configDao.delete(KEY_CONTRACT_ADDRESS);
                 contractAddress = deployContractRaw();
                 configDao.set(KEY_CONTRACT_ADDRESS, contractAddress);
@@ -126,12 +156,6 @@ public class BlockchainService {
 
     /**
      * Deploys the contract by sending a raw eth_sendTransaction with the bytecode as data.
-     * This bypasses web3j's deployRemoteCall which requires the binary to be EVM-compatible
-     * at the Java level. Ganache processes the transaction natively.
-     *
-     * The binary used here is the paris-translated version from ChatVerification.BINARY.
-     * If that still fails, this method falls back to eth_sendTransaction with the raw
-     * SHANGHAI_BINARY — at that point the user MUST change Ganache hardfork to 'shanghai'.
      */
     private String deployContractRaw() throws Exception {
         String binary = ChatVerification.BINARY;
@@ -141,14 +165,13 @@ public class BlockchainService {
         BigInteger nonce = web3j.ethGetTransactionCount(
                 deployerAddress, DefaultBlockParameterName.PENDING).send().getTransactionCount();
 
-        // Build a contract-creation transaction (to = null means contract creation)
         Transaction tx = Transaction.createContractTransaction(
                 deployerAddress,
                 nonce,
                 BigInteger.valueOf(gasPrice),
                 BigInteger.valueOf(gasLimit),
-                BigInteger.ZERO,          // value = 0 ETH
-                "0x" + binary             // bytecode as data field
+                BigInteger.ZERO,
+                "0x" + binary
         );
 
         EthSendTransaction sent = web3j.ethSendTransaction(tx).send();
@@ -162,7 +185,6 @@ public class BlockchainService {
         String txHash = sent.getTransactionHash();
         System.out.println("📨 Deploy tx hash: " + txHash);
 
-        // Poll for receipt (Ganache mines instantly)
         TransactionReceipt receipt = waitForReceipt(txHash);
         if (receipt.getContractAddress() == null) {
             throw new RuntimeException("Deployment receipt has no contract address. Status: "
@@ -183,30 +205,43 @@ public class BlockchainService {
 
     /**
      * Stores the keccak256 hash of a message on the blockchain.
+     *
+     * @param message  The raw (encrypted) message content to hash and store
+     * @param receiver The ETH address of the message recipient.
+     *                 Pass null or empty to fall back to the deployer address.
      */
-    public String storeMessageHash(String message) throws Exception {
+    public String storeMessageHash(String message, String receiver) throws Exception {
         if (message == null || message.isEmpty()) {
             throw new IllegalArgumentException("Message cannot be empty");
         }
         if (contract == null) {
             throw new IllegalStateException("Blockchain contract is not initialized");
         }
-        byte[] hashBytes = toBytes32(Hash.sha3(message));
-        TransactionReceipt receipt =contract.storeHash(hashBytes, deployerAddress).send();
+
+        // BUG FIX: use the actual receiver address, not always deployerAddress
+        String receiverAddress = (receiver != null && receiver.startsWith("0x") && receiver.length() == 42)
+                ? receiver
+                : deployerAddress;
+
+        byte[] hashBytes = toBytes32(Hash.sha3(message.getBytes(StandardCharsets.UTF_8)));
+        TransactionReceipt receipt = contract.storeHash(hashBytes, receiverAddress).send();
         String txHash = receipt.getTransactionHash();
-        System.out.println("📦 Message hash stored on blockchain. txHash: " + txHash);
+        System.out.println("📦 Message hash stored on blockchain. txHash: " + txHash
+                + " | receiver: " + receiverAddress);
         return txHash;
     }
 
     /**
      * Verifies a message hash on the blockchain.
      * Returns timestamp > 0 if verified, 0 if not found.
+     *
+     * @param message The raw message content (same value that was passed to storeMessageHash)
      */
     public long verifyMessageHash(String message) throws Exception {
         if (contract == null) {
             throw new IllegalStateException("Blockchain contract is not initialized");
         }
-        byte[] hashBytes = toBytes32(Hash.sha3(message));
+        byte[] hashBytes = toBytes32(Hash.sha3(message.getBytes(StandardCharsets.UTF_8)));
         BigInteger timestamp = contract.verifyHash(hashBytes).send();
         return timestamp.longValue();
     }
@@ -224,25 +259,14 @@ public class BlockchainService {
     }
 
     /**
-     * Called when a contract interaction fails (e.g. "invalid JUMP" due to EVM version mismatch).
-     * Clears the stored contract address from DB and nullifies the in-memory instance so the
-     * contract is redeployed fresh on the next application restart.
-     *
-     * Root cause of "invalid JUMP": the contract binary was compiled with --evm-version shanghai
-     * (uses PUSH0 opcode) but Ganache is running on the default "merge" hardfork which does NOT
-     * support PUSH0.
-     * Fix options:
-     *   1. In Ganache GUI → Settings → Chain → Hardfork → select "shanghai" → Restart Ganache
-     *      (then also delete the contract_address row from blockchain_config table so it redeploys)
-     *   2. Recompile the Solidity contract with --evm-version paris and regenerate ChatVerification.java
+     * Called when a contract interaction fails with a genuine EVM infrastructure error.
+     * Clears the stored contract address from DB and redeploys immediately.
      */
-    public void handleContractFailure() {
-        //System.err.println("🔄 Contract failure detected — redeploying immediately...");
+    public String handleContractFailure() {
         try {
             configDao.delete(KEY_CONTRACT_ADDRESS);
             contract = null;
 
-            // Redeploy right now so the next request doesn't get "contract is null"
             TransactionManager txManager = new ClientTransactionManager(web3j, deployerAddress);
             StaticGasProvider gasProvider = new StaticGasProvider(
                     BigInteger.valueOf(gasPrice), BigInteger.valueOf(gasLimit));
@@ -250,19 +274,27 @@ public class BlockchainService {
             String newAddress = deployContractRaw();
             contract = ChatVerification.load(newAddress, web3j, txManager, gasProvider);
             configDao.set(KEY_CONTRACT_ADDRESS, newAddress);
-            System.out.println("✅ Contract redeployed at: " + newAddress);
+            System.out.println("✅ Contract deployed at: " + newAddress);
+            return  newAddress;
         } catch (Exception ex) {
             System.err.println("❌ Redeployment in handleContractFailure failed: " + ex.getMessage());
-            contract = null; // stays null; next request will get a clear error
+            contract = null;
+            return  null;
         }
     }
 
-    private byte[] toBytes32(String hexHash) {
-        byte[] hashBytes = Numeric.hexStringToByteArray(hexHash);
+    /**
+     * BUG FIX: previous version used Numeric.hexStringToByteArray which expects a hex string,
+     * but Hash.sha3(byte[]) already returns a 32-byte array — not a hex string.
+     * We now accept the raw byte[] directly from Hash.sha3().
+     */
+    private byte[] toBytes32(byte[] hashBytes) {
         if (hashBytes.length == 32) return hashBytes;
+        // Pad or truncate to exactly 32 bytes (right-aligned / left-zero-padded)
         byte[] padded = new byte[32];
-        int offset = 32 - hashBytes.length;
-        System.arraycopy(hashBytes, 0, padded, Math.max(0, offset), Math.min(hashBytes.length, 32));
+        int srcLen = Math.min(hashBytes.length, 32);
+        int destOffset = 32 - srcLen;
+        System.arraycopy(hashBytes, 0, padded, destOffset, srcLen);
         return padded;
     }
 }

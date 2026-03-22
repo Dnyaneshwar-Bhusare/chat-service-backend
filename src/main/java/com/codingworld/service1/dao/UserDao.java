@@ -136,6 +136,19 @@ public class UserDao {
     }
 
     /**
+     * Fetch user by UserID — used to resolve ETH address for blockchain transactions
+     * @param userId The numeric UserID (stored as String)
+     * @return User object or null if not found
+     */
+    public User getUserById(String userId) {
+        String sql = "SELECT UserID, username, email, mobileno, profile_pic, eth_address, public_key " +
+                     "FROM db_chat.users WHERE UserID = :userId";
+        MapSqlParameterSource params = new MapSqlParameterSource("userId", userId);
+        List<User> users = namedParameterJdbcTemplate.query(sql, params, new UserLoginRowMapper());
+        return users.isEmpty() ? null : users.get(0);
+    }
+
+    /**
      * RowMapper to map database rows to User objects
      */
     private static class UserRowMapper implements RowMapper<User> {
