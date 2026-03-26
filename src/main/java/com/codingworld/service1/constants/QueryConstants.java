@@ -1,18 +1,10 @@
 package com.codingworld.service1.constants;
 
-/**
- * Centralized SQL query constants for all DAO classes.
- * All queries are defined here as static final strings.
- */
 public class QueryConstants {
 
     private QueryConstants() {
-        throw new AssertionError("QueryConstants class should not be instantiated");
+        throw new AssertionError();
     }
-
-    // ─────────────────────────────────────────────
-    // USER QUERIES
-    // ─────────────────────────────────────────────
 
     public static final String USER_GET_ALL =
             "SELECT UserID, username, email, mobileno, public_key " +
@@ -54,21 +46,14 @@ public class QueryConstants {
     public static final String USER_UPDATE_PUBLIC_KEY =
             "UPDATE db_chat.users SET public_key = :publicKey WHERE email = :email";
 
-    // Update last_seen timestamp for a user by userId
     public static final String USER_UPDATE_LAST_SEEN =
             "UPDATE db_chat.users SET last_seen = :lastSeen WHERE UserID = :userId";
 
-    // Fetch last_seen for a user by userId
     public static final String USER_GET_LAST_SEEN =
             "SELECT last_seen FROM db_chat.users WHERE UserID = :userId";
 
-    // Update profile_pic (base64) for a user by userId
     public static final String USER_UPDATE_PROFILE_PIC =
             "UPDATE db_chat.users SET profile_pic = :profilePic WHERE UserID = :userId";
-
-    // ─────────────────────────────────────────────
-    // CHAT MESSAGE QUERIES
-    // ─────────────────────────────────────────────
 
     public static final String CHAT_INSERT =
             "INSERT INTO db_chat.chat_table " +
@@ -119,25 +104,18 @@ public class QueryConstants {
             "LEFT JOIN db_chat.users u ON c.`from` = u.UserID " +
             "WHERE c.chat_id = :chatId";
 
-    // Delete a single message by chatId — only the sender can delete their own message
     public static final String CHAT_DELETE_BY_ID =
             "DELETE FROM db_chat.chat_table " +
             "WHERE chat_id = :chatId AND `from` = :userId";
 
-    // Delete all messages in a conversation between two users
     public static final String CHAT_DELETE_CONVERSATION =
             "DELETE FROM db_chat.chat_table " +
             "WHERE (`from` = :userId1 AND `to` = :userId2) " +
             "OR    (`from` = :userId2 AND `to` = :userId1)";
 
-    // Delete all messages sent OR received by a specific user
     public static final String CHAT_DELETE_ALL_FOR_USER =
             "DELETE FROM db_chat.chat_table " +
             "WHERE `from` = :userId OR `to` = :userId";
-
-    // ─────────────────────────────────────────────
-    // NOTIFICATION QUERIES
-    // ─────────────────────────────────────────────
 
     public static final String NOTIFICATION_INSERT =
             "INSERT INTO notification_table (notification_type, notification_ref_id, timestamp) " +
@@ -158,10 +136,6 @@ public class QueryConstants {
             WHERE notification_type = 'DECRYPT_FAILURE'
               AND (c.`from` = :refId OR c.`to` = :refId)
             """;
-
-    // ─────────────────────────────────────────────
-    // BLOCKCHAIN CONFIG QUERIES
-    // ─────────────────────────────────────────────
 
     public static final String BLOCKCHAIN_CONFIG_CREATE_TABLE =
             "CREATE TABLE IF NOT EXISTS db_chat.blockchain_config (" +

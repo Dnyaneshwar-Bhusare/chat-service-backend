@@ -30,8 +30,6 @@ public class ChatWebSocketHandler implements WebSocketHandler {
     @SuppressWarnings("unchecked")
     public void handleMessage(WebSocketSession session, WebSocketMessage<?> message) {
         String payload = message.getPayload().toString();
-        System.out.println("Received WebSocket message: " + payload);
-
         try {
             Map<String, Object> messageData = objectMapper.readValue(payload, Map.class);
             String type = (String) messageData.get("type");
@@ -41,7 +39,6 @@ public class ChatWebSocketHandler implements WebSocketHandler {
                 if (userId != null) {
                     userSessions.put(userId, session);
                     userPresenceService.markOnline(userId);
-                    System.out.println("User " + userId + " connected to WebSocket");
 
                     Map<String, Object> response = new HashMap<>();
                     response.put("type", "login_success");
@@ -61,7 +58,6 @@ public class ChatWebSocketHandler implements WebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus closeStatus) {
-        // Find the userId for this session, mark offline, then remove
         userSessions.entrySet().stream()
                 .filter(e -> e.getValue().equals(session))
                 .map(Map.Entry::getKey)

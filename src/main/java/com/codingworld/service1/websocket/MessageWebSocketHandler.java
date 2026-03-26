@@ -13,42 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * WebSocket handler dedicated to fetching user messages in real time.
- *
- * Endpoint : ws://<host>/ws/messages
- *
- * ── Supported incoming message types ──────────────────────────────────────
- *
- *  1. register   – Must be sent first so the server knows who this socket belongs to.
- *                  { "type": "register", "userId": "42" }
- *
- *  2. get_messages – Fetch conversation history between two users.
- *                  { "type": "get_messages", "userId": "42", "sender": "42", "receiver": "7" }
- *                  • sender   (optional) – one side of the conversation
- *                  • receiver (optional) – other side of the conversation
- *                  • If both sender & receiver are omitted → returns ALL messages for userId.
- *
- *  3. get_user_status – Check the online/offline status of a user.
- *                  { "type": "get_user_status", "userId": "42", "targetUserId": "7" }
- *                  • targetUserId (required) – the user whose status you want to check
- *
- * ── Server responses ───────────────────────────────────────────────────────
- *
- *  Success  : { "type": "messages_response", "status": "ok",    "data": [ ...ChatMessageView... ] }
- *  Error    : { "type": "messages_response", "status": "error", "message": "..." }
- *  Register : { "type": "register_success",  "message": "Registered successfully" }
- *  User Status: { "type": "user_status_response", "presence": { ...user presence data... } }
- *
- * ── Real-time push (triggered by ChatMessageService on send) ───────────────
- *  When a new message arrives for the connected user, the server automatically
- *  pushes:  { "type": "new_message", "data": { ...ChatMessageView... } }
- *  And also pushes presence updates: { "type": "presence_update", "presence": { ...user presence data... } }
- */
 @Component
 public class MessageWebSocketHandler implements WebSocketHandler {
 
-    // userId -> WebSocketSession  (same pattern as ChatWebSocketHandler)
     private final Map<String, WebSocketSession> userSessions = new ConcurrentHashMap<>();
 
     @Autowired
@@ -60,10 +27,6 @@ public class MessageWebSocketHandler implements WebSocketHandler {
     @Autowired
     private ObjectMapper objectMapper;
 
-    // ─────────────────────────────────────────────────────────────
-    // Connection lifecycle
-    // ─────────────────────────────────────────────────────────────
-
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         System.out.println("MessageWebSocket connected: " + session.getId());
@@ -73,26 +36,20 @@ public class MessageWebSocketHandler implements WebSocketHandler {
     @SuppressWarnings("unchecked")
     public void handleMessage(WebSocketSession session, WebSocketMessage<?> message) {
         String payload = message.getPayload().toString();
-        System.out.println("MessageWebSocket received: " + payload);
-
         try {
             Map<String, Object> data = objectMapper.readValue(payload, Map.class);
             String type = (String) data.get("type");
 
             switch (type != null ? type : "") {
-
                 case "register":
                     handleRegister(session, data);
                     break;
-
                 case "get_messages":
                     handleGetMessages(session, data);
                     break;
-
                 case "get_user_status":
                     handleGetUserStatus(session, data);
                     break;
-
                 default:
                     sendError(session, "Unknown message type: " + type);
             }
@@ -110,7 +67,6 @@ public class MessageWebSocketHandler implements WebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        // Find the userId for this session, mark offline, then remove
         userSessions.entrySet().stream()
                 .filter(e -> e.getValue().equals(session))
                 .map(Map.Entry::getKey)
@@ -129,10 +85,6 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         return false;
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // Handler: register
-    // ─────────────────────────────────────────────────────────────
-
     private void handleRegister(WebSocketSession session, Map<String, Object> data) throws Exception {
         String userId = (String) data.get("userId");
         if (userId == null || userId.trim().isEmpty()) {
@@ -142,18 +94,12 @@ public class MessageWebSocketHandler implements WebSocketHandler {
 
         userSessions.put(userId, session);
         userPresenceService.markOnline(userId);
-        System.out.println("MessageWebSocket: user " + userId + " registered");
 
         Map<String, Object> response = new HashMap<>();
         response.put("type", "register_success");
         response.put("message", "Registered successfully");
         send(session, response);
     }
-
-    // ─────────────────────────────────────────────────────────────
-    // Handler: get_messages
-    // Includes the receiver's online/last_seen status in the response
-    // ─────────────────────────────────────────────────────────────
 
     private void handleGetMessages(WebSocketSession session, Map<String, Object> data) throws Exception {
         String userId   = (String) data.get("userId");
@@ -172,7 +118,6 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         response.put("status", "ok");
         response.put("data", messages);
 
-        // Attach the other user's presence status if a specific conversation is requested
         if (receiver != null && !receiver.trim().isEmpty()) {
             response.put("receiverStatus", userPresenceService.getPresence(receiver));
         }
@@ -181,13 +126,7 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         }
 
         send(session, response);
-        System.out.println("MessageWebSocket: sent " + messages.size() + " messages to user " + userId);
     }
-
-    // ─────────────────────────────────────────────────────────────
-    // Handler: get_user_status
-    // Frontend can ask for any user's online/last_seen at any time
-    // ─────────────────────────────────────────────────────────────
 
     private void handleGetUserStatus(WebSocketSession session, Map<String, Object> data) throws Exception {
         String targetUserId = (String) data.get("targetUserId");
@@ -200,18 +139,8 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         response.put("type", "user_status_response");
         response.put("presence", userPresenceService.getPresence(targetUserId));
         send(session, response);
-        System.out.println("MessageWebSocket: sent status of user " + targetUserId);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // Public: push a new message to a connected user
-    // Also pushes updated presence of the sender so receiver UI updates
-    // ─────────────────────────────────────────────────────────────
-
-    /**
-     * Push a newly received message to the target user if they are connected
-     * on the /ws/messages socket.
-     */
     public void pushNewMessage(String toUserId, ChatMessageView messageView) {
         WebSocketSession session = userSessions.get(toUserId);
         if (session != null && session.isOpen()) {
@@ -219,7 +148,6 @@ public class MessageWebSocketHandler implements WebSocketHandler {
                 Map<String, Object> push = new HashMap<>();
                 push.put("type", "new_message");
                 push.put("data", messageView);
-                // Include sender's presence so receiver always has fresh online status
                 push.put("senderStatus", userPresenceService.getPresence(messageView.getFromUser()));
                 send(session, push);
             } catch (Exception e) {
@@ -228,10 +156,6 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         }
     }
 
-    /**
-     * Push a presence update to a specific user.
-     * Used to notify user A when user B comes online or goes offline.
-     */
     public void pushPresenceUpdate(String toUserId, String changedUserId) {
         WebSocketSession session = userSessions.get(toUserId);
         if (session != null && session.isOpen()) {
@@ -251,10 +175,6 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         return session != null && session.isOpen();
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // Helpers
-    // ─────────────────────────────────────────────────────────────
-
     private void send(WebSocketSession session, Object payload) throws Exception {
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(payload)));
     }
@@ -271,4 +191,3 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         }
     }
 }
-

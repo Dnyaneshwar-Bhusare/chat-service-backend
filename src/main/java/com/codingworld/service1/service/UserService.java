@@ -11,9 +11,6 @@ import java.io.IOException;
 import java.util.Base64;
 import java.util.List;
 
-/**
- * Service layer for User operations
- */
 @Service
 public class UserService {
 
@@ -23,10 +20,6 @@ public class UserService {
     @Autowired
     private BCryptPasswordEncoder passwordEncoder;
 
-    /**
-     * Get all users from the database
-     * @return List of User objects
-     */
     public List<User> getAllUsers() {
         try {
             return userDao.getAllUsers();
@@ -35,16 +28,10 @@ public class UserService {
         }
     }
 
-    /**
-     * Get user by email
-     * @param email User's email
-     * @return User object or null if not found
-     */
     public User getUserByEmail(String email) {
         if (email == null || email.trim().isEmpty()) {
             throw new IllegalArgumentException("Email cannot be null or empty");
         }
-
         try {
             return userDao.getUserByEmail(email.trim().toLowerCase());
         } catch (Exception e) {
@@ -52,16 +39,10 @@ public class UserService {
         }
     }
 
-    /**
-     * Get user by username
-     * @param username User's username
-     * @return User object or null if not found
-     */
     public User getUserByUsername(String username) {
         if (username == null || username.trim().isEmpty()) {
             throw new IllegalArgumentException("Username cannot be null or empty");
         }
-
         try {
             return userDao.getUserByUsername(username.trim());
         } catch (Exception e) {
@@ -69,26 +50,14 @@ public class UserService {
         }
     }
 
-    /**
-     * Check if user exists by email
-     * @param email User's email
-     * @return true if user exists, false otherwise
-     */
     public boolean userExistsByEmail(String email) {
         return getUserByEmail(email) != null;
     }
 
-    /**
-     * Get total user count
-     * @return Number of users in the database
-     */
     public int getUserCount() {
         return getAllUsers().size();
     }
 
-    /**
-     * Authenticate user login credentials with optional public key update.
-     */
     public User authenticateUser(String email, String password, String publicKey) {
         if (email == null || email.trim().isEmpty()) {
             throw new IllegalArgumentException("Email cannot be null or empty");
@@ -113,7 +82,6 @@ public class UserService {
                 if (passwordMatches) {
                     String hashed = passwordEncoder.encode(password);
                     userDao.updatePassword(email.trim().toLowerCase(), hashed);
-                    System.out.println("🔄 Password migrated to BCrypt for: " + email);
                 }
             }
 
@@ -131,10 +99,6 @@ public class UserService {
         }
     }
 
-    /**
-     * Checks if a stored password is already a BCrypt hash.
-     * BCrypt hashes always start with $2a$, $2b$, or $2y$
-     */
     private boolean isBCryptHash(String password) {
         return password != null &&
                (password.startsWith("$2a$") ||
@@ -142,26 +106,17 @@ public class UserService {
                 password.startsWith("$2y$"));
     }
 
-    /**
-     * Register a new user (sign up)
-     * @param user User object with details
-     * @return true if registration successful, false if email already exists
-     */
     public boolean registerUser(User user) {
         if (user == null || user.getEmail() == null || user.getEmail().trim().isEmpty()) {
             throw new IllegalArgumentException("Email cannot be null or empty");
         }
         if (userExistsByEmail(user.getEmail())) {
-            return false; // Email already exists
+            return false;
         }
-        // ✅ Hash password with BCrypt before saving to DB
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         return userDao.insertUser(user);
     }
 
-    /**
-     * Update profile picture for a user — converts uploaded file to Base64 and stores in DB.
-     */
     public String updateProfilePic(String userId, MultipartFile file) {
         if (userId == null || userId.trim().isEmpty()) {
             throw new IllegalArgumentException("User ID cannot be null or empty");

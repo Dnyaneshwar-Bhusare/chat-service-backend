@@ -21,8 +21,6 @@ public class ARPSpoofMonitor {
     private static final Pattern ARP_PATTERN =
             Pattern.compile("(\\d+\\.\\d+\\.\\d+\\.\\d+)\\s+([0-9a-fA-F-]+)");
 
-    // Uncomment @Scheduled to enable periodic ARP cache monitoring
-    // @Scheduled(fixedRate = 5000)
     public void monitorARPCache() throws IOException {
         if (checkARPCache()) {
             System.out.println("[ALERT] ARP Spoofing Detected!");
@@ -64,4 +62,3 @@ public class ARPSpoofMonitor {
         return null;
     }
 }
-

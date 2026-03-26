@@ -8,17 +8,12 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-/**
- * DAO to persist blockchain config (contract address, wallet key) in DB.
- * This way nothing needs to be hardcoded or manually updated in properties.
- */
 @Repository
 public class BlockchainConfigDao {
 
     @Autowired
     private NamedParameterJdbcTemplate jdbc;
 
-    /** Called once on startup to make sure the table exists */
     public void ensureTableExists() {
         jdbc.getJdbcTemplate().execute(QueryConstants.BLOCKCHAIN_CONFIG_CREATE_TABLE);
     }

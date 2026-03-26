@@ -33,12 +33,11 @@ public class AuthController {
             User authenticatedUser = userService.authenticateUser(email, password, publicKey);
 
             if (authenticatedUser != null) {
-                // Return base64 profile pic directly from DB (or null if not set)
                 LoginResponse loginResponse = new LoginResponse(
                         authenticatedUser.getUserId(),
                         authenticatedUser.getUsername(),
                         authenticatedUser.getEmail(),
-                        authenticatedUser.getProfilePic(),  // base64 string stored in DB
+                        authenticatedUser.getProfilePic(),
                         "Welcome back!",
                         "active",
                         true
@@ -83,14 +82,6 @@ public class AuthController {
         }
     }
 
-    /**
-     * Upload and update profile picture for a user.
-     * Accepts multipart/form-data with fields: userId and image file.
-     * Stores the image as a Base64 string in the DB.
-     *
-     * POST /updateProfilePic
-     * Form params: userId (String), file (MultipartFile)
-     */
     @PostMapping("/updateProfilePic")
     public Response updateProfilePic(
             @RequestParam("userId") String userId,
