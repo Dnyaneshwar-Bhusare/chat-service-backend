@@ -1,5 +1,6 @@
 package com.codingworld.service1.dao;
 
+import com.codingworld.service1.constants.QueryConstants;
 import com.codingworld.service1.model.ChatMessageEntity;
 import com.codingworld.service1.model.ChatMessageView;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,21 +34,17 @@ public class ChatMessageDao {
         // Generate unique chat_id
         String chatId = UUID.randomUUID().toString();
 
-        String sql = "INSERT INTO db_chat.chat_table " +
-                     "(chat_id, message,message_1, `from`, `to`, algo, tx_hash, created_ts) " +
-                     "VALUES (:chatId, :message,:messageToSelf, :fromUser, :toUser, :algo, :txHash, :createdTs)";
-
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("chatId", chatId);
         parameters.addValue("message", chatMessage.getMessage());
+        parameters.addValue("messageToSelf", chatMessage.getMessageToSelf());
         parameters.addValue("fromUser", chatMessage.getFromUser());
         parameters.addValue("toUser", chatMessage.getToUser());
         parameters.addValue("algo", chatMessage.getAlgo());
         parameters.addValue("txHash", chatMessage.getTxHash());
         parameters.addValue("createdTs", Timestamp.valueOf(chatMessage.getCreatedTs()));
-        parameters.addValue("messageToSelf", chatMessage.getMessageToSelf());
 
-        namedParameterJdbcTemplate.update(sql, parameters);
+        namedParameterJdbcTemplate.update(QueryConstants.CHAT_INSERT, parameters);
 
         return chatId;
     }
@@ -59,49 +56,15 @@ public class ChatMessageDao {
      */
     public List<ChatMessageView> getMessagesForUser(String userId, String sender, String reciver) {
         if ((sender == null || sender.trim().isEmpty()) && (reciver == null || reciver.trim().isEmpty())) {
-            // If both sender and reciver are null or empty, use the simple query
-            String sql = "SELECT c.chat_id, c.message, " +
-                        "    CASE \n" +
-                        "        WHEN c.`from` = :userId THEN c.`message_1`\n" +
-                        "        ELSE c.`message`\n" +
-                        "    END AS message_for_sender,\n" +
-                         "c.`from`, c.`to`, c.algo, c.created_ts, c.tx_hash, u.public_key as public_key " +
-                         "FROM db_chat.chat_table c " +
-                         "LEFT JOIN db_chat.users u ON c.`from` = u.UserID " +
-                         "WHERE c.`to` = :userId OR c.`from` = :userId " +
-                         "ORDER BY c.created_ts DESC";
             MapSqlParameterSource parameters = new MapSqlParameterSource();
             parameters.addValue("userId", userId);
-            return namedParameterJdbcTemplate.query(sql, parameters, new ChatMessageViewRowMapperSimple());
+            return namedParameterJdbcTemplate.query(QueryConstants.CHAT_GET_ALL_FOR_USER, parameters, new ChatMessageViewRowMapperSimple());
         }
-        String sqlUpdated = "SELECT \n" +
-                "    c.chat_id,\n" +
-                "    CASE \n" +
-                "        WHEN c.`from` = :sender THEN c.`message_1`\n" +
-                "        WHEN c.`to` = :sender THEN c.`message`\n" +
-                "    END AS message_for_sender,\n" +
-                "    c.`from`,\n" +
-                "    c.`to`,\n" +
-                "    c.algo,\n" +
-                "    c.created_ts,\n" +
-                "    c.tx_hash,\n" +
-                "    u.public_key\n" +
-                "FROM db_chat.chat_table c\n" +
-                "LEFT JOIN db_chat.users u \n" +
-                "    ON c.`from` = u.UserID\n" +
-                "WHERE \n" +
-                "    (\n" +
-                "        (c.`from` = :sender AND c.`to` = :reciver)\n" +
-                "        OR \n" +
-                "        (c.`from` = :reciver AND c.`to` = :sender)\n" +
-                "    )\n" +
-                "ORDER BY c.created_ts DESC";
 
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("sender", sender);
         parameters.addValue("reciver", reciver);
-
-        return namedParameterJdbcTemplate.query(sqlUpdated, parameters, new ChatMessageViewRowMapper());
+        return namedParameterJdbcTemplate.query(QueryConstants.CHAT_GET_BETWEEN_USERS, parameters, new ChatMessageViewRowMapper());
     }
 
     /**
@@ -109,17 +72,10 @@ public class ChatMessageDao {
      * Used for real-time updates
      */
     public List<ChatMessageView> getNewMessagesForUser(String userId, LocalDateTime afterTime) {
-        String sql = "SELECT chat_id, message, `from`, `to`, algo, created_ts, tx_hash " +
-                     "FROM db_chat.chat_table " +
-                     "WHERE (`to` = :userId OR `from` = :userId) " +
-                     "AND created_ts > :afterTime " +
-                     "ORDER BY created_ts ASC";
-
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("userId", userId);
         parameters.addValue("afterTime", Timestamp.valueOf(afterTime));
-
-        return namedParameterJdbcTemplate.query(sql, parameters, new ChatMessageViewRowMapper());
+        return namedParameterJdbcTemplate.query(QueryConstants.CHAT_GET_NEW_FOR_USER, parameters, new ChatMessageViewRowMapper());
     }
 
     /**
@@ -127,16 +83,42 @@ public class ChatMessageDao {
      * Returns null if not found.
      */
     public ChatMessageView getMessageByChatId(String chatId) {
-        String sql = "SELECT c.chat_id, c.message AS message_for_sender, " +
-                     "c.`from`, c.`to`, c.algo, c.created_ts, c.tx_hash, " +
-                     "u.public_key " +
-                     "FROM db_chat.chat_table c " +
-                     "LEFT JOIN db_chat.users u ON c.`from` = u.UserID " +
-                     "WHERE c.chat_id = :chatId";
-
         MapSqlParameterSource params = new MapSqlParameterSource("chatId", chatId);
-        List<ChatMessageView> results = namedParameterJdbcTemplate.query(sql, params, new ChatMessageViewRowMapper());
+        List<ChatMessageView> results = namedParameterJdbcTemplate.query(QueryConstants.CHAT_GET_BY_ID, params, new ChatMessageViewRowMapper());
         return results.isEmpty() ? null : results.get(0);
+    }
+
+    /**
+     * Delete a single message by chatId.
+     * Only the sender (userId) can delete their own message.
+     * Returns true if a row was deleted, false if chatId not found or userId is not the sender.
+     */
+    public boolean deleteMessageById(String chatId, String userId) {
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("chatId", chatId);
+        params.addValue("userId", userId);
+        int rows = namedParameterJdbcTemplate.update(QueryConstants.CHAT_DELETE_BY_ID, params);
+        return rows > 0;
+    }
+
+    /**
+     * Delete all messages in a conversation between two users (both directions).
+     * Returns the number of rows deleted.
+     */
+    public int deleteConversation(String userId1, String userId2) {
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("userId1", userId1);
+        params.addValue("userId2", userId2);
+        return namedParameterJdbcTemplate.update(QueryConstants.CHAT_DELETE_CONVERSATION, params);
+    }
+
+    /**
+     * Delete ALL messages sent or received by a user.
+     * Returns the number of rows deleted.
+     */
+    public int deleteAllMessagesForUser(String userId) {
+        MapSqlParameterSource params = new MapSqlParameterSource("userId", userId);
+        return namedParameterJdbcTemplate.update(QueryConstants.CHAT_DELETE_ALL_FOR_USER, params);
     }
 
     /**

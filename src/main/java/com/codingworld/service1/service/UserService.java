@@ -5,7 +5,10 @@ import com.codingworld.service1.model.User;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.util.Base64;
 import java.util.List;
 
 /**
@@ -84,64 +87,7 @@ public class UserService {
     }
 
     /**
-     * Authenticate user login credentials
-     * @param email User's email
-     * @param password User's password
-     * @return User object if login successful, null if failed
-     */
-    public User authenticateUser(String email, String password) {
-        if (email == null || email.trim().isEmpty()) {
-            throw new IllegalArgumentException("Email cannot be null or empty");
-        }
-        if (password == null || password.trim().isEmpty()) {
-            throw new IllegalArgumentException("Password cannot be null or empty");
-        }
-
-        try {
-            User userCredentials = userDao.getUserCredentials(email.trim().toLowerCase());
-
-            if (userCredentials == null) {
-                return null; // User not found
-            }
-
-            String storedPassword = userCredentials.getPassword();
-            boolean passwordMatches = false;
-
-            if (isBCryptHash(storedPassword)) {
-                // ✅ Already BCrypt — use BCrypt compare
-                passwordMatches = passwordEncoder.matches(password, storedPassword);
-            } else {
-                // ⚠️ Plain text password (legacy user) — compare directly
-                passwordMatches = password.equals(storedPassword);
-                if (passwordMatches) {
-                    // ✅ Auto-migrate: hash and update in DB immediately
-                    String hashed = passwordEncoder.encode(password);
-                    userDao.updatePassword(email.trim().toLowerCase(), hashed);
-                    System.out.println("🔄 Password migrated to BCrypt for: " + email);
-                }
-            }
-
-            if (passwordMatches) {
-                User fullUserDetails = userDao.getUserForLogin(email.trim().toLowerCase());
-                if (fullUserDetails != null && fullUserDetails.getUserId() == null) {
-                    fullUserDetails.setUserId(userCredentials.getUserId());
-                }
-                return fullUserDetails;
-            }
-
-            return null; // Password doesn't match
-
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to authenticate user: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Authenticate user login credentials with public key
-     * @param email User's email
-     * @param password User's password
-     * @param publicKey User's public key
-     * @return User object if login successful, null if failed
+     * Authenticate user login credentials with optional public key update.
      */
     public User authenticateUser(String email, String password, String publicKey) {
         if (email == null || email.trim().isEmpty()) {
@@ -153,13 +99,12 @@ public class UserService {
 
         try {
             User userCredentials = userDao.getUserCredentials(email.trim().toLowerCase());
-
             if (userCredentials == null) {
-                return null; // User not found
+                return null;
             }
 
             String storedPassword = userCredentials.getPassword();
-            boolean passwordMatches = false;
+            boolean passwordMatches;
 
             if (isBCryptHash(storedPassword)) {
                 passwordMatches = passwordEncoder.matches(password, storedPassword);
@@ -173,17 +118,15 @@ public class UserService {
             }
 
             if (passwordMatches) {
-                // Update public key if provided
                 if (publicKey != null && !publicKey.trim().isEmpty()) {
                     userDao.updateUserPublicKey(email.trim().toLowerCase(), publicKey);
                 }
-                // Return full user details for login response
                 return userDao.getUserForLogin(email.trim().toLowerCase());
-            } else {
-                return null;
             }
+            return null;
+
         } catch (Exception e) {
-            e.printStackTrace();
+            System.err.println("Authentication error for " + email + ": " + e.getMessage());
             return null;
         }
     }
@@ -197,19 +140,6 @@ public class UserService {
                (password.startsWith("$2a$") ||
                 password.startsWith("$2b$") ||
                 password.startsWith("$2y$"));
-    }
-
-    /**
-     * Get user details for successful login
-     * @param email User's email
-     * @return User object with full details
-     */
-    public User getUserForLogin(String email) {
-        try {
-            return userDao.getUserForLogin(email);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to get user for login: " + e.getMessage(), e);
-        }
     }
 
     /**
@@ -227,5 +157,34 @@ public class UserService {
         // ✅ Hash password with BCrypt before saving to DB
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         return userDao.insertUser(user);
+    }
+
+    /**
+     * Update profile picture for a user — converts uploaded file to Base64 and stores in DB.
+     */
+    public String updateProfilePic(String userId, MultipartFile file) {
+        if (userId == null || userId.trim().isEmpty()) {
+            throw new IllegalArgumentException("User ID cannot be null or empty");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Image file cannot be null or empty");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new IllegalArgumentException("Only image files are allowed");
+        }
+
+        try {
+            byte[] bytes = file.getBytes();
+            String base64 = "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(bytes);
+            boolean updated = userDao.updateProfilePic(userId.trim(), base64);
+            if (!updated) {
+                throw new RuntimeException("User not found or profile pic update failed");
+            }
+            return base64;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read image file: " + e.getMessage(), e);
+        }
     }
 }

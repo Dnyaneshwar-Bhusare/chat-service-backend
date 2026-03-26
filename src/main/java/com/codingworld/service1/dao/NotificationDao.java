@@ -1,55 +1,46 @@
 package com.codingworld.service1.dao;
 
+import com.codingworld.service1.constants.QueryConstants;
 import com.codingworld.service1.model.Notification;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
-import java.util.List;
-import org.springframework.jdbc.core.RowMapper;
+
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
 
 @Repository
 public class NotificationDao {
+
     @Autowired
     private NamedParameterJdbcTemplate jdbcTemplate;
 
     public void insertNotification(Notification notification) {
-        String sql = "INSERT INTO notification_table (notification_type, notification_ref_id, timestamp) VALUES (:type, :refId, :timestamp)";
         MapSqlParameterSource params = new MapSqlParameterSource();
         params.addValue("type", notification.getNotificationType());
         params.addValue("refId", notification.getNotificationRefId());
         params.addValue("timestamp", notification.getTimestamp());
-        jdbcTemplate.update(sql, params);
+        jdbcTemplate.update(QueryConstants.NOTIFICATION_INSERT, params);
     }
 
     public List<Notification> getAllNotifications() {
-        String sql = "SELECT notification_type, notification_ref_id, timestamp FROM notification_table";
-        return jdbcTemplate.query(sql, new NotificationRowMapper());
+        return jdbcTemplate.query(QueryConstants.NOTIFICATION_GET_ALL, new NotificationRowMapper());
     }
 
     public List<Notification> getNotificationsByTypeAndRefId(String type, String refId) {
-        String sql = "SELECT notification_type, notification_ref_id, timestamp FROM notification_table \n" +
-                "WHERE notification_type = 'LOGIN'\n" +
-                "AND notification_ref_id = :refId\n" +
-                "union all\n" +
-                "SELECT notification_type, notification_ref_id, timestamp FROM notification_table n\n" +
-                "inner join chat_table  c on  c.chat_id=n.notification_ref_id \n" +
-                "WHERE \n" +
-                " notification_type = 'DECRYPT_FAILURE' and \n" +
-                "c.`from`  = :refId or c.`to`=:refId";
         MapSqlParameterSource params = new MapSqlParameterSource();
         params.addValue("type", type);
         params.addValue("refId", refId);
-        List<Notification> notifications = jdbcTemplate.query(sql, params, new NotificationRowMapper());
-        // If type is 'login', add a message to each notification
+        List<Notification> notifications = jdbcTemplate.query(QueryConstants.NOTIFICATION_GET_BY_TYPE_AND_REF, params, new NotificationRowMapper());
 
-            for (Notification notification : notifications) {
-                if ("DECRYPT_FAILURE".equalsIgnoreCase(notification.getNotificationType())) {
+        for (Notification notification : notifications) {
+            if ("DECRYPT_FAILURE".equalsIgnoreCase(notification.getNotificationType())) {
                 String ts = notification.getTimestamp();
                 notification.setMessage("MITM Attack detected at " + (ts != null ? ts : "unknown time"));
-            }else if ("LOGIN".equalsIgnoreCase(notification.getNotificationType())) {
+            } else if ("LOGIN".equalsIgnoreCase(notification.getNotificationType())) {
                 String ts = notification.getTimestamp();
                 notification.setMessage("Login Activity detected at " + (ts != null ? ts : "unknown time"));
             }

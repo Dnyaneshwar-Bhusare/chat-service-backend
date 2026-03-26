@@ -5,7 +5,9 @@ import com.codingworld.service1.dao.UserDao;
 import com.codingworld.service1.model.ChatMessageEntity;
 import com.codingworld.service1.model.ChatMessageView;
 import com.codingworld.service1.websocket.ChatWebSocketHandler;
+import com.codingworld.service1.websocket.MessageWebSocketHandler;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -24,6 +26,10 @@ public class ChatMessageService {
 
     @Autowired
     private ChatWebSocketHandler webSocketHandler;
+
+    @Autowired
+    @Lazy
+    private MessageWebSocketHandler messageWebSocketHandler;
 
     @Autowired
     private UserDao userDao;
@@ -60,12 +66,12 @@ public class ChatMessageService {
                 // If user not found or error, leave publicKey as null
             }
 
+            ChatMessageView messageView = new ChatMessageView(
+                    chatId, message, fromUser, toUser, algo, chatMessage.getCreatedTs(), txHash, publicKey
+            );
+
             // Send real-time notification to recipient if connected
             if (webSocketHandler.isUserConnected(toUser)) {
-                ChatMessageView messageView = new ChatMessageView(
-                    chatId, message, fromUser, toUser, algo, chatMessage.getCreatedTs(), txHash, publicKey
-                );
-
                 // Create map using Java 8 compatible approach
                 Map<String, Object> notificationData = new HashMap<>();
                 notificationData.put("type", "new_message");
@@ -73,6 +79,9 @@ public class ChatMessageService {
 
                 webSocketHandler.sendMessageToUser(toUser, notificationData);
             }
+
+            // Push over /ws/messages socket (new)
+            messageWebSocketHandler.pushNewMessage(toUser, messageView);
 
             return chatId;
 
@@ -117,6 +126,43 @@ public class ChatMessageService {
             return chatMessageDao.getMessageByChatId(chatId);
         } catch (Exception e) {
             throw new RuntimeException("Failed to get message by chatId: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Delete a single message by chatId.
+     * Only the sender (userId) can delete their own message.
+     * Returns true if deleted, false if not found or user is not the sender.
+     */
+    public boolean deleteMessageById(String chatId, String userId) {
+        try {
+            return chatMessageDao.deleteMessageById(chatId, userId);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete message: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Delete all messages in a conversation between two users.
+     * Returns number of deleted rows.
+     */
+    public int deleteConversation(String userId1, String userId2) {
+        try {
+            return chatMessageDao.deleteConversation(userId1, userId2);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete conversation: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Delete ALL messages sent or received by a user.
+     * Returns number of deleted rows.
+     */
+    public int deleteAllMessagesForUser(String userId) {
+        try {
+            return chatMessageDao.deleteAllMessagesForUser(userId);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete all messages for user: " + e.getMessage(), e);
         }
     }
 }

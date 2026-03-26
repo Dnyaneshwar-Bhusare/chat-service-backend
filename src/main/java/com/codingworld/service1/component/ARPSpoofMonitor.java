@@ -1,7 +1,7 @@
-package com.codingworld.service1.controller;
+package com.codingworld.service1.component;
 
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -18,11 +18,11 @@ public class ARPSpoofMonitor {
     private static final String GATEWAY_MAC = "00-1e-a6-81-b8-98";
     private static final Set<String> trustedMACs = new HashSet<>(Arrays.asList("00:1e:a6:81:b8:98"));
 
-    // Regex pattern to match IP and MAC in ARP output
     private static final Pattern ARP_PATTERN =
             Pattern.compile("(\\d+\\.\\d+\\.\\d+\\.\\d+)\\s+([0-9a-fA-F-]+)");
 
-    //@Scheduled(fixedRate = 5000)
+    // Uncomment @Scheduled to enable periodic ARP cache monitoring
+    // @Scheduled(fixedRate = 5000)
     public void monitorARPCache() throws IOException {
         if (checkARPCache()) {
             System.out.println("[ALERT] ARP Spoofing Detected!");
@@ -50,7 +50,7 @@ public class ARPSpoofMonitor {
                     System.out.println("[WARNING] Unknown device: " + line);
                 }
             } catch (Exception e) {
-                System.err.println("Error parsing line: " + line);
+                System.err.println("Error parsing ARP line: " + line);
             }
         }
         return isSpoofed;
@@ -64,3 +64,4 @@ public class ARPSpoofMonitor {
         return null;
     }
 }
+

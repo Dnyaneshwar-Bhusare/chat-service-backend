@@ -15,12 +15,9 @@ import org.web3j.protocol.http.HttpService;
 import org.web3j.tx.ClientTransactionManager;
 import org.web3j.tx.TransactionManager;
 import org.web3j.tx.gas.StaticGasProvider;
-import org.web3j.utils.Numeric;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
 
@@ -138,12 +135,12 @@ public class BlockchainService {
 
         } catch (Exception e) {
             System.err.println("❌ BlockchainService init failed: " + e.getClass().getName() + ": " + e.getMessage());
-            e.printStackTrace();
             contract = null;
         }
     }
 
     /** Returns a verified-working contract address, deploying if not yet in DB. */
+    @SuppressWarnings("unused")
     private String loadOrDeploy(TransactionManager txManager, StaticGasProvider gasProvider) throws Exception {
         String contractAddress = configDao.get(KEY_CONTRACT_ADDRESS);
         if (contractAddress == null) {
@@ -158,6 +155,7 @@ public class BlockchainService {
 
     /**
      * Deploys the contract by sending a raw eth_sendTransaction with the bytecode as data.
+     * Returns the deployed contract address.
      */
     private String deployContractRaw() throws Exception {
         String binary = ChatVerification.BINARY;
@@ -193,46 +191,6 @@ public class BlockchainService {
                 + receipt.getStatus());
         }
         return receipt.getContractAddress();
-    }
-
-    private HashMap<String,String> deployContractRaw1() throws Exception {
-        HashMap<String,String> map =new HashMap<>();
-        String binary = ChatVerification.BINARY;
-        System.out.println("📄 Deploying binary length: " + binary.length() / 2 + " bytes");
-        System.out.println("📄 Binary prefix: " + binary.substring(0, Math.min(40, binary.length())));
-
-        BigInteger nonce = web3j.ethGetTransactionCount(
-                deployerAddress, DefaultBlockParameterName.PENDING).send().getTransactionCount();
-
-        Transaction tx = Transaction.createContractTransaction(
-                deployerAddress,
-                nonce,
-                BigInteger.valueOf(gasPrice),
-                BigInteger.valueOf(gasLimit),
-                BigInteger.ZERO,
-                "0x" + binary
-        );
-
-        EthSendTransaction sent = web3j.ethSendTransaction(tx).send();
-        if (sent.hasError()) {
-            String errMsg = sent.getError().getMessage() != null
-                    ? sent.getError().getMessage()
-                    : "unknown error (code: " + sent.getError().getCode() + ")";
-            throw new RuntimeException("Contract deployment tx failed: " + errMsg);
-        }
-
-        String txHash = sent.getTransactionHash();
-
-        System.out.println("📨 Deploy tx hash: " + txHash);
-
-        TransactionReceipt receipt = waitForReceipt(txHash);
-        if (receipt.getContractAddress() == null) {
-            throw new RuntimeException("Deployment receipt has no contract address. Status: "
-                    + receipt.getStatus());
-        }
-        map.put("contractAddress", receipt.getContractAddress());
-        map.put("txHash", txHash);
-        return map;
     }
 
     private TransactionReceipt waitForReceipt(String txHash) throws Exception {
@@ -303,6 +261,7 @@ public class BlockchainService {
     /**
      * Called when a contract interaction fails with a genuine EVM infrastructure error.
      * Clears the stored contract address from DB and redeploys immediately.
+     * Returns the new deployment tx hash.
      */
     public String handleContractFailure() {
         try {
@@ -313,17 +272,15 @@ public class BlockchainService {
             StaticGasProvider gasProvider = new StaticGasProvider(
                     BigInteger.valueOf(gasPrice), BigInteger.valueOf(gasLimit));
 
-            HashMap<String, String> stringStringHashMap = deployContractRaw1();
-            String newAddress = stringStringHashMap.get("contractAddress");
-            String txHash = stringStringHashMap.get("txHash");
+            String newAddress = deployContractRaw();
             contract = ChatVerification.load(newAddress, web3j, txManager, gasProvider);
             configDao.set(KEY_CONTRACT_ADDRESS, newAddress);
-            System.out.println("✅ Contract deployed at: " + newAddress);
-            return  txHash;
+            System.out.println("✅ Contract redeployed at: " + newAddress);
+            return newAddress;
         } catch (Exception ex) {
             System.err.println("❌ Redeployment in handleContractFailure failed: " + ex.getMessage());
             contract = null;
-            return  null;
+            return null;
         }
     }
 

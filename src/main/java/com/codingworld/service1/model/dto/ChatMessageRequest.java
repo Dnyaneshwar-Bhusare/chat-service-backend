@@ -1,4 +1,4 @@
-package com.codingworld.service1.controller;
+package com.codingworld.service1.model.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -6,7 +6,7 @@ import lombok.Data;
 
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class ChatMessage {
+public class ChatMessageRequest {
     private String message;
     private String messageToSelf;
     private String from;
@@ -16,3 +16,4 @@ public class ChatMessage {
     private String secretKey;
     private String timestamp;
 }
+

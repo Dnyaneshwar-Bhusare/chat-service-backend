@@ -1,5 +1,6 @@
 package com.codingworld.service1.blockchain;
 
+import com.codingworld.service1.constants.QueryConstants;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -14,40 +15,28 @@ import java.util.List;
 @Repository
 public class BlockchainConfigDao {
 
-    private static final String TABLE =
-            "CREATE TABLE IF NOT EXISTS db_chat.blockchain_config (" +
-            "  config_key   VARCHAR(100) PRIMARY KEY," +
-            "  config_value VARCHAR(500) NOT NULL," +
-            "  updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" +
-            ")";
-
     @Autowired
     private NamedParameterJdbcTemplate jdbc;
 
     /** Called once on startup to make sure the table exists */
     public void ensureTableExists() {
-        jdbc.getJdbcTemplate().execute(TABLE);
+        jdbc.getJdbcTemplate().execute(QueryConstants.BLOCKCHAIN_CONFIG_CREATE_TABLE);
     }
 
     public String get(String key) {
-        String sql = "SELECT config_value FROM db_chat.blockchain_config WHERE config_key = :key";
-        List<String> results = jdbc.queryForList(sql,
+        List<String> results = jdbc.queryForList(QueryConstants.BLOCKCHAIN_CONFIG_GET,
                 new MapSqlParameterSource("key", key), String.class);
         return results.isEmpty() ? null : results.get(0);
     }
 
     public void set(String key, String value) {
-        String sql = "INSERT INTO db_chat.blockchain_config (config_key, config_value) " +
-                     "VALUES (:key, :value) " +
-                     "ON DUPLICATE KEY UPDATE config_value = :value";
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("key", key)
                 .addValue("value", value);
-        jdbc.update(sql, params);
+        jdbc.update(QueryConstants.BLOCKCHAIN_CONFIG_SET, params);
     }
 
     public void delete(String key) {
-        String sql = "DELETE FROM db_chat.blockchain_config WHERE config_key = :key";
-        jdbc.update(sql, new MapSqlParameterSource("key", key));
+        jdbc.update(QueryConstants.BLOCKCHAIN_CONFIG_DELETE, new MapSqlParameterSource("key", key));
     }
 }

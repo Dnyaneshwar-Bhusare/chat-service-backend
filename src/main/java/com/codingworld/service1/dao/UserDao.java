@@ -1,5 +1,6 @@
 package com.codingworld.service1.dao;
 
+import com.codingworld.service1.constants.QueryConstants;
 import com.codingworld.service1.model.User;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.RowMapper;
@@ -25,9 +26,7 @@ public class UserDao {
      * @return List of User objects
      */
     public List<User> getAllUsers() {
-        String sql = "SELECT UserID, username, email, mobileno, public_key FROM db_chat.users where public_key is not null";
-
-        return namedParameterJdbcTemplate.query(sql, new MapSqlParameterSource(), new UserRowMapper());
+        return namedParameterJdbcTemplate.query(QueryConstants.USER_GET_ALL, new MapSqlParameterSource(), new UserRowMapper());
     }
 
     /**
@@ -36,13 +35,9 @@ public class UserDao {
      * @return User object or null if not found
      */
     public User getUserByEmail(String email) {
-        String sql = "SELECT username, email, mobileno, public_key FROM db_chat.users WHERE email = :email";
-
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("email", email);
-
-        List<User> users = namedParameterJdbcTemplate.query(sql, parameters, new UserRowMapper());
-
+        List<User> users = namedParameterJdbcTemplate.query(QueryConstants.USER_GET_BY_EMAIL, parameters, new UserRowMapper());
         return users.isEmpty() ? null : users.get(0);
     }
 
@@ -52,13 +47,9 @@ public class UserDao {
      * @return User object or null if not found
      */
     public User getUserByUsername(String username) {
-        String sql = "SELECT username, email, mobileno, public_key FROM db_chat.users WHERE username = :username";
-
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("username", username);
-
-        List<User> users = namedParameterJdbcTemplate.query(sql, parameters, new UserRowMapper());
-
+        List<User> users = namedParameterJdbcTemplate.query(QueryConstants.USER_GET_BY_USERNAME, parameters, new UserRowMapper());
         return users.isEmpty() ? null : users.get(0);
     }
 
@@ -68,13 +59,9 @@ public class UserDao {
      * @return User object with email, password, and profile_pic, or null if not found
      */
     public User getUserCredentials(String email) {
-        String sql = "SELECT UserID, email, password, profile_pic, public_key FROM db_chat.users WHERE email = :email";
-
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("email", email);
-
-        List<User> users = namedParameterJdbcTemplate.query(sql, parameters, new UserCredentialsRowMapper());
-
+        List<User> users = namedParameterJdbcTemplate.query(QueryConstants.USER_GET_CREDENTIALS, parameters, new UserCredentialsRowMapper());
         return users.isEmpty() ? null : users.get(0);
     }
 
@@ -84,13 +71,21 @@ public class UserDao {
      * @return Complete User object with all details including profile_pic and UserID
      */
     public User getUserForLogin(String email) {
-        String sql = "SELECT UserID, username, email, mobileno, profile_pic, eth_address, public_key FROM db_chat.users WHERE email = :email";
-
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         parameters.addValue("email", email);
+        List<User> users = namedParameterJdbcTemplate.query(QueryConstants.USER_GET_FOR_LOGIN, parameters, new UserLoginRowMapper());
+        return users.isEmpty() ? null : users.get(0);
+    }
 
-        List<User> users = namedParameterJdbcTemplate.query(sql, parameters, new UserLoginRowMapper());
-
+    /**
+     * Fetch user by userId
+     * @param userId User's ID
+     * @return User object or null if not found
+     */
+    public User getUserById(String userId) {
+        MapSqlParameterSource parameters = new MapSqlParameterSource();
+        parameters.addValue("userId", userId);
+        List<User> users = namedParameterJdbcTemplate.query(QueryConstants.USER_GET_BY_ID, parameters, new UserLoginRowMapper());
         return users.isEmpty() ? null : users.get(0);
     }
 
@@ -100,8 +95,6 @@ public class UserDao {
      * @return true if inserted successfully, false otherwise
      */
     public boolean insertUser(User user) {
-        String sql = "INSERT INTO db_chat.users (username, email, password, profile_pic, mobileno, public_key) " +
-                "VALUES (:username, :email, :password, :profilePic, :mobileno, :publicKey)";
         MapSqlParameterSource params = new MapSqlParameterSource();
         params.addValue("username", user.getUsername());
         params.addValue("email", user.getEmail());
@@ -109,7 +102,7 @@ public class UserDao {
         params.addValue("profilePic", user.getProfilePic());
         params.addValue("mobileno", user.getMobileno());
         params.addValue("publicKey", user.getPublicKey());
-        int rows = namedParameterJdbcTemplate.update(sql, params);
+        int rows = namedParameterJdbcTemplate.update(QueryConstants.USER_INSERT, params);
         return rows > 0;
     }
 
@@ -117,35 +110,52 @@ public class UserDao {
      * Update password for a user (used for BCrypt migration)
      */
     public void updatePassword(String email, String hashedPassword) {
-        String sql = "UPDATE db_chat.users SET password = :password WHERE email = :email";
         MapSqlParameterSource params = new MapSqlParameterSource();
         params.addValue("password", hashedPassword);
         params.addValue("email", email);
-        namedParameterJdbcTemplate.update(sql, params);
+        namedParameterJdbcTemplate.update(QueryConstants.USER_UPDATE_PASSWORD, params);
     }
 
     /**
      * Update the public key for a user by email
      */
     public void updateUserPublicKey(String email, String publicKey) {
-        String sql = "UPDATE db_chat.users SET public_key = :publicKey WHERE email = :email";
         MapSqlParameterSource params = new MapSqlParameterSource();
         params.addValue("publicKey", publicKey);
         params.addValue("email", email);
-        namedParameterJdbcTemplate.update(sql, params);
+        namedParameterJdbcTemplate.update(QueryConstants.USER_UPDATE_PUBLIC_KEY, params);
     }
 
     /**
-     * Fetch user by UserID — used to resolve ETH address for blockchain transactions
-     * @param userId The numeric UserID (stored as String)
-     * @return User object or null if not found
+     * Update last_seen timestamp for a user when they disconnect
      */
-    public User getUserById(String userId) {
-        String sql = "SELECT UserID, username, email, mobileno, profile_pic, eth_address, public_key " +
-                     "FROM db_chat.users WHERE UserID = :userId";
+    public void updateLastSeen(String userId, java.time.LocalDateTime lastSeen) {
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("userId", userId);
+        params.addValue("lastSeen", lastSeen);
+        namedParameterJdbcTemplate.update(QueryConstants.USER_UPDATE_LAST_SEEN, params);
+    }
+
+    /**
+     * Get last_seen timestamp for a user by userId
+     */
+    public java.time.LocalDateTime getLastSeen(String userId) {
         MapSqlParameterSource params = new MapSqlParameterSource("userId", userId);
-        List<User> users = namedParameterJdbcTemplate.query(sql, params, new UserLoginRowMapper());
-        return users.isEmpty() ? null : users.get(0);
+        List<java.sql.Timestamp> results = namedParameterJdbcTemplate.queryForList(
+                QueryConstants.USER_GET_LAST_SEEN, params, java.sql.Timestamp.class);
+        if (results.isEmpty() || results.get(0) == null) return null;
+        return results.get(0).toLocalDateTime();
+    }
+
+    /**
+     * Update profile_pic (base64) for a user by userId
+     */
+    public boolean updateProfilePic(String userId, String base64Image) {
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("userId", userId);
+        params.addValue("profilePic", base64Image);
+        int rows = namedParameterJdbcTemplate.update(QueryConstants.USER_UPDATE_PROFILE_PIC, params);
+        return rows > 0;
     }
 
     /**

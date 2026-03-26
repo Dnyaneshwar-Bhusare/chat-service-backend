@@ -1,10 +1,11 @@
-package com.codingworld.service1.controller;
+package com.codingworld.service1.model.dto;
 
 import lombok.Data;
 
 @Data
-public class Login {
+public class LoginRequest {
     private String email;
     private String password;
     private String publicKey;
 }
+
