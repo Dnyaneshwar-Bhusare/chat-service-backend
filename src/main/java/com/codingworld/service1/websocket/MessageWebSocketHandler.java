@@ -4,10 +4,13 @@ import com.codingworld.service1.model.ChatMessageView;
 import com.codingworld.service1.service.ChatMessageService;
 import com.codingworld.service1.service.UserPresenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,7 +19,13 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class MessageWebSocketHandler implements WebSocketHandler {
 
-    private final Map<String, WebSocketSession> userSessions = new ConcurrentHashMap<>();
+    private final Map<String, WebSocketSession> userSessions    = new ConcurrentHashMap<>();
+    private final Map<String, Long>             lastPongTime    = new ConcurrentHashMap<>();
+    // tracks the last time each user was connected — used to deliver missed messages on reconnect
+    private final Map<String, LocalDateTime>    lastDisconnectTime = new ConcurrentHashMap<>();
+
+    private static final long HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
+    private static final long PONG_TIMEOUT_MS        = 60_000; // 60 seconds
 
     @Autowired
     private ChatMessageService chatMessageService;
@@ -29,12 +38,20 @@ public class MessageWebSocketHandler implements WebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        System.out.println("MessageWebSocket connected: " + session.getId());
+        lastPongTime.put(session.getId(), System.currentTimeMillis());
+        System.out.println("[MessageWS] Connection established: " + session.getId());
     }
 
     @Override
     @SuppressWarnings("unchecked")
     public void handleMessage(WebSocketSession session, WebSocketMessage<?> message) {
+        // Handle WebSocket-level pong frame
+        if (message instanceof PongMessage) {
+            lastPongTime.put(session.getId(), System.currentTimeMillis());
+            System.out.println("[MessageWS] Pong received from session: " + session.getId());
+            return;
+        }
+
         String payload = message.getPayload().toString();
         try {
             Map<String, Object> data = objectMapper.readValue(payload, Map.class);
@@ -50,34 +67,39 @@ public class MessageWebSocketHandler implements WebSocketHandler {
                 case "get_user_status":
                     handleGetUserStatus(session, data);
                     break;
+                case "ping":
+                    // application-level ping — reply with pong
+                    lastPongTime.put(session.getId(), System.currentTimeMillis());
+                    Map<String, Object> pong = new HashMap<>();
+                    pong.put("type", "pong");
+                    send(session, pong);
+                    break;
                 default:
                     sendError(session, "Unknown message type: " + type);
             }
 
         } catch (Exception e) {
-            System.err.println("MessageWebSocket error: " + e.getMessage());
+            System.err.println("[MessageWS] Error handling message: " + e.getMessage());
             sendError(session, "Invalid request: " + e.getMessage());
         }
     }
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
-        System.err.println("MessageWebSocket transport error: " + exception.getMessage());
+        String cause = exception.getMessage();
+        if (cause != null && cause.contains("Connection reset by peer")) {
+            System.out.println("[MessageWS] Client disconnected abruptly (Connection reset by peer) on session: " + session.getId());
+        } else {
+            System.err.println("[MessageWS] Transport error on session " + session.getId() + ": " + cause);
+        }
+        // Session is already broken — only clean up, do NOT try to close it
+        removeSession(session);
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        userSessions.entrySet().stream()
-                .filter(e -> e.getValue().equals(session))
-                .map(Map.Entry::getKey)
-                .findFirst()
-                .ifPresent(userId -> {
-                    userPresenceService.markOffline(userId);
-                    System.out.println("MessageWebSocket: user " + userId + " marked offline");
-                });
-
-        userSessions.entrySet().removeIf(e -> e.getValue().equals(session));
-        System.out.println("MessageWebSocket disconnected: " + session.getId());
+        System.out.println("[MessageWS] Connection closed: " + session.getId() + " | status: " + status);
+        removeSession(session);
     }
 
     @Override
@@ -85,11 +107,57 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         return false;
     }
 
+    // ── Heartbeat ─────────────────────────────────────────────────────────────
+
+    /**
+     * Runs every 30 seconds. Sends a WebSocket ping to every active session.
+     * Any session that has not responded with a pong within PONG_TIMEOUT_MS
+     * is considered stale and closed so the client can reconnect cleanly.
+     */
+    @Scheduled(fixedRate = HEARTBEAT_INTERVAL_MS)
+    public void sendHeartbeat() {
+        long now = System.currentTimeMillis();
+        userSessions.forEach((userId, session) -> {
+            if (!session.isOpen()) {
+                System.out.println("[MessageWS] Heartbeat: session already closed for user " + userId + ", cleaning up.");
+                removeSession(session);
+                return;
+            }
+
+            long lastPong = lastPongTime.getOrDefault(session.getId(), now);
+            if (now - lastPong > PONG_TIMEOUT_MS) {
+                System.err.println("[MessageWS] Heartbeat: no pong from user " + userId
+                        + " for " + ((now - lastPong) / 1000) + "s — closing stale session.");
+                removeSession(session);
+                closeSession(session, CloseStatus.SESSION_NOT_RELIABLE);
+                return;
+            }
+
+            try {
+                session.sendMessage(new PingMessage());
+                System.out.println("[MessageWS] Heartbeat ping sent to user: " + userId);
+            } catch (Exception e) {
+                System.err.println("[MessageWS] Heartbeat: failed to ping user " + userId + ": " + e.getMessage());
+                removeSession(session);
+                closeSession(session, CloseStatus.SERVER_ERROR);
+            }
+        });
+    }
+
+    // ── Message handlers ──────────────────────────────────────────────────────
+
     private void handleRegister(WebSocketSession session, Map<String, Object> data) throws Exception {
         String userId = (String) data.get("userId");
         if (userId == null || userId.trim().isEmpty()) {
             sendError(session, "userId is required for registration");
             return;
+        }
+
+        // Replace any existing stale session for this user
+        WebSocketSession oldSession = userSessions.get(userId);
+        if (oldSession != null && !oldSession.getId().equals(session.getId())) {
+            System.out.println("[MessageWS] Replacing stale session for user: " + userId);
+            closeSession(oldSession, CloseStatus.SESSION_NOT_RELIABLE);
         }
 
         userSessions.put(userId, session);
@@ -99,6 +167,10 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         response.put("type", "register_success");
         response.put("message", "Registered successfully");
         send(session, response);
+        System.out.println("[MessageWS] User registered: " + userId);
+
+        // Deliver any messages missed while the client was disconnected
+        deliverMissedMessages(userId, session);
     }
 
     private void handleGetMessages(WebSocketSession session, Map<String, Object> data) throws Exception {
@@ -141,6 +213,39 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         send(session, response);
     }
 
+    // ── Missed messages on reconnect ──────────────────────────────────────────
+
+    /**
+     * After a client re-registers (reconnects), fetch all messages that arrived
+     * while they were offline and push them as a "missed_messages" event.
+     */
+    private void deliverMissedMessages(String userId, WebSocketSession session) {
+        LocalDateTime disconnectedAt = lastDisconnectTime.get(userId);
+        if (disconnectedAt == null) {
+            // First-ever connection — nothing to catch up on
+            return;
+        }
+
+        try {
+            List<ChatMessageView> missed = chatMessageService.getNewMessagesForUser(userId, disconnectedAt);
+            if (missed == null || missed.isEmpty()) {
+                System.out.println("[MessageWS] No missed messages for user: " + userId);
+                return;
+            }
+
+            Map<String, Object> push = new HashMap<>();
+            push.put("type", "missed_messages");
+            push.put("count", missed.size());
+            push.put("data", missed);
+            send(session, push);
+            System.out.println("[MessageWS] Delivered " + missed.size() + " missed message(s) to user: " + userId);
+        } catch (Exception e) {
+            System.err.println("[MessageWS] Failed to deliver missed messages to " + userId + ": " + e.getMessage());
+        }
+    }
+
+    // ── Push helpers ──────────────────────────────────────────────────────────
+
     public void pushNewMessage(String toUserId, ChatMessageView messageView) {
         WebSocketSession session = userSessions.get(toUserId);
         if (session != null && session.isOpen()) {
@@ -151,7 +256,8 @@ public class MessageWebSocketHandler implements WebSocketHandler {
                 push.put("senderStatus", userPresenceService.getPresence(messageView.getFromUser()));
                 send(session, push);
             } catch (Exception e) {
-                System.err.println("MessageWebSocket push error for user " + toUserId + ": " + e.getMessage());
+                System.err.println("[MessageWS] Push error for user " + toUserId + ": " + e.getMessage());
+                removeSession(session);
             }
         }
     }
@@ -165,7 +271,8 @@ public class MessageWebSocketHandler implements WebSocketHandler {
                 push.put("presence", userPresenceService.getPresence(changedUserId));
                 send(session, push);
             } catch (Exception e) {
-                System.err.println("MessageWebSocket presence push error: " + e.getMessage());
+                System.err.println("[MessageWS] Presence push error: " + e.getMessage());
+                removeSession(session);
             }
         }
     }
@@ -175,6 +282,33 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         return session != null && session.isOpen();
     }
 
+    // ── Internal helpers ──────────────────────────────────────────────────────
+
+    private void removeSession(WebSocketSession session) {
+        userSessions.entrySet().removeIf(entry -> {
+            if (entry.getValue().equals(session)) {
+                String userId = entry.getKey();
+                userPresenceService.markOffline(userId);
+                // Record disconnect time so missed messages can be delivered on next reconnect
+                lastDisconnectTime.put(userId, LocalDateTime.now());
+                System.out.println("[MessageWS] Session removed, disconnect time recorded for user: " + userId);
+                return true;
+            }
+            return false;
+        });
+        lastPongTime.remove(session.getId());
+    }
+
+    private void closeSession(WebSocketSession session, CloseStatus status) {
+        if (session.isOpen()) {
+            try {
+                session.close(status);
+            } catch (Exception ex) {
+                System.err.println("[MessageWS] Error closing session " + session.getId() + ": " + ex.getMessage());
+            }
+        }
+    }
+
     private void send(WebSocketSession session, Object payload) throws Exception {
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(payload)));
     }
@@ -182,12 +316,55 @@ public class MessageWebSocketHandler implements WebSocketHandler {
     private void sendError(WebSocketSession session, String errorMessage) {
         try {
             Map<String, Object> error = new HashMap<>();
-            error.put("type", "messages_response");
-            error.put("status", "error");
+            error.put("type", "error");
             error.put("message", errorMessage);
             send(session, error);
         } catch (Exception e) {
-            System.err.println("MessageWebSocket could not send error frame: " + e.getMessage());
+            System.err.println("[MessageWS] Failed to send error message: " + e.getMessage());
         }
+    }
+
+    // ── Presence broadcast ────────────────────────────────────────────────────
+
+    /**
+     * Called by UserPresenceService whenever a user goes online or offline.
+     * Pushes a "presence_update" event to every OTHER connected user so their
+     * UI can reflect the change in real time (e.g., show online dot, update last seen).
+     */
+    private void broadcastPresenceChange(String changedUserId, boolean isOnline) {
+        Map<String, Object> presence = userPresenceService.getPresence(changedUserId);
+        Map<String, Object> push = new HashMap<>();
+        push.put("type", "presence_update");
+        push.put("presence", presence);
+
+        int notified = 0;
+        for (Map.Entry<String, WebSocketSession> entry : userSessions.entrySet()) {
+            String connectedUserId = entry.getKey();
+            WebSocketSession session = entry.getValue();
+
+            // Skip the user whose presence changed — notify everyone else
+            if (connectedUserId.equals(changedUserId)) continue;
+            if (session == null || !session.isOpen()) continue;
+
+            try {
+                send(session, push);
+                notified++;
+            } catch (Exception e) {
+                System.err.println("[MessageWS] Failed to push presence update to user "
+                        + connectedUserId + ": " + e.getMessage());
+            }
+        }
+
+        System.out.println("[MessageWS] Presence change broadcasted — user: " + changedUserId
+                + " is now " + (isOnline ? "ONLINE" : "OFFLINE")
+                + " — notified " + notified + " connected user(s).");
+    }
+
+    @PostConstruct
+    public void init() {
+        // Register this handler as the presence change listener.
+        // Whenever any user goes online/offline, broadcast it to all other connected users.
+        userPresenceService.setPresenceChangeListener(this::broadcastPresenceChange);
+        System.out.println("[MessageWS] Presence change listener registered.");
     }
 }

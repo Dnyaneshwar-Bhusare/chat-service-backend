@@ -115,6 +115,7 @@ public class UserDao {
             user.setEmail(rs.getString("email"));
             user.setMobileno(rs.getString("mobileno"));
             user.setPublicKey(rs.getString("public_key"));
+            user.setProfilePic(rs.getString("profile_pic")); // ensure profilePic is mapped
             return user;
         }
     }

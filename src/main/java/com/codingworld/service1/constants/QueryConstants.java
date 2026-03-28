@@ -7,17 +7,17 @@ public class QueryConstants {
     }
 
     public static final String USER_GET_ALL =
-            "SELECT UserID, username, email, mobileno, public_key " +
+            "SELECT UserID, username, email, mobileno, public_key, profile_pic " +
             "FROM db_chat.users " +
             "WHERE public_key IS NOT NULL";
 
     public static final String USER_GET_BY_EMAIL =
-            "SELECT username, email, mobileno, public_key " +
+            "SELECT username, email, mobileno, public_key, profile_pic " +
             "FROM db_chat.users " +
             "WHERE email = :email";
 
     public static final String USER_GET_BY_USERNAME =
-            "SELECT username, email, mobileno, public_key " +
+            "SELECT username, email, mobileno, public_key, profile_pic " +
             "FROM db_chat.users " +
             "WHERE username = :username";
 

@@ -75,10 +75,14 @@ public class AuthController {
     @GetMapping("/users")
     public Response users() {
         try {
-            return new Response("1", "ok", userService.getAllUsers());
+            Response response = new Response("1", "ok", userService.getAllUsers());
+            System.out.println("[INFO] /users API response: " + response);
+            return response;
         } catch (Exception e) {
             System.err.println("Error fetching users: " + e.getMessage());
-            return new Response("0", "Failed to fetch users", null);
+            Response errorResponse = new Response("0", "Failed to fetch users", null);
+            System.out.println("[INFO] /users API response: " + errorResponse);
+            return errorResponse;
         }
     }
 
