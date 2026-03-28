@@ -65,10 +65,9 @@ public class ChatMessageDao {
         return results.isEmpty() ? null : results.get(0);
     }
 
-    public boolean deleteMessageById(String chatId, String userId) {
+    public boolean deleteMessageById(String chatId) {
         MapSqlParameterSource params = new MapSqlParameterSource();
         params.addValue("chatId", chatId);
-        params.addValue("userId", userId);
         int rows = namedParameterJdbcTemplate.update(QueryConstants.CHAT_DELETE_BY_ID, params);
         return rows > 0;
     }

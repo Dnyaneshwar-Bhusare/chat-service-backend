@@ -94,9 +94,9 @@ public class ChatMessageService {
         }
     }
 
-    public boolean deleteMessageById(String chatId, String userId) {
+    public boolean deleteMessageById(String chatId) {
         try {
-            return chatMessageDao.deleteMessageById(chatId, userId);
+            return chatMessageDao.deleteMessageById(chatId);
         } catch (Exception e) {
             throw new RuntimeException("Failed to delete message: " + e.getMessage(), e);
         }

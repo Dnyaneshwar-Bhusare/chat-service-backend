@@ -158,21 +158,17 @@ public class ChatController {
      * Deletes a single message. Only the original sender can delete it.
      */
     @DeleteMapping("/deleteMessage/{chatId}")
-    public Response deleteMessage(@PathVariable String chatId,
-                                  @RequestParam String userId) {
+    public Response deleteMessage(@PathVariable String chatId) {
         try {
             if (chatId == null || chatId.trim().isEmpty()) {
                 return new Response("0", "chatId is required", null);
             }
-            if (userId == null || userId.trim().isEmpty()) {
-                return new Response("0", "userId is required", null);
-            }
 
-            boolean deleted = chatMessageService.deleteMessageById(chatId, userId);
+            boolean deleted = chatMessageService.deleteMessageById(chatId);
             if (deleted) {
                 return new Response("1", "Message deleted successfully", null);
             } else {
-                return new Response("0", "Message not found or you are not the sender", null);
+                return new Response("0", "Message not found", null);
             }
         } catch (Exception e) {
             System.err.println("Error deleting message " + chatId + ": " + e.getMessage());

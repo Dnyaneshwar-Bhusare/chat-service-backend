@@ -105,8 +105,7 @@ public class QueryConstants {
             "WHERE c.chat_id = :chatId";
 
     public static final String CHAT_DELETE_BY_ID =
-            "DELETE FROM db_chat.chat_table " +
-            "WHERE chat_id = :chatId AND `from` = :userId";
+            "DELETE FROM db_chat.chat_table WHERE chat_id = :chatId";
 
     public static final String CHAT_DELETE_CONVERSATION =
             "DELETE FROM db_chat.chat_table " +
