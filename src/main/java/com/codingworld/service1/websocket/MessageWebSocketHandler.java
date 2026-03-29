@@ -11,30 +11,29 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class MessageWebSocketHandler implements WebSocketHandler {
 
-    private final Map<String, WebSocketSession> userSessions    = new ConcurrentHashMap<>();
-    private final Map<String, Long>             lastPongTime    = new ConcurrentHashMap<>();
-    // tracks the last time each user was connected — used to deliver missed messages on reconnect
+    private final Map<String, WebSocketSession> userSessions      = new ConcurrentHashMap<>();
+    private final Map<String, Long>             lastPongTime       = new ConcurrentHashMap<>();
     private final Map<String, LocalDateTime>    lastDisconnectTime = new ConcurrentHashMap<>();
 
-    private static final long HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
-    private static final long PONG_TIMEOUT_MS        = 60_000; // 60 seconds
+    /**
+     * presenceWatchers: receiverId → Set of watcherUserIds
+     * When user 17 opens chat with user 20, we store: "20" → {"17"}
+     * So when user 20 comes online/offline, we immediately push to user 17.
+     */
+    private final Map<String, Set<String>> presenceWatchers = new ConcurrentHashMap<>();
 
-    @Autowired
-    private ChatMessageService chatMessageService;
+    private static final long HEARTBEAT_INTERVAL_MS = 30_000;
+    private static final long PONG_TIMEOUT_MS        = 60_000;
 
-    @Autowired
-    private UserPresenceService userPresenceService;
-
-    @Autowired
-    private ObjectMapper objectMapper;
+    @Autowired private ChatMessageService  chatMessageService;
+    @Autowired private UserPresenceService userPresenceService;
+    @Autowired private ObjectMapper        objectMapper;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
@@ -153,7 +152,6 @@ public class MessageWebSocketHandler implements WebSocketHandler {
             return;
         }
 
-        // Replace any existing stale session for this user
         WebSocketSession oldSession = userSessions.get(userId);
         if (oldSession != null && !oldSession.getId().equals(session.getId())) {
             System.out.println("[MessageWS] Replacing stale session for user: " + userId);
@@ -161,7 +159,7 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         }
 
         userSessions.put(userId, session);
-        userPresenceService.markOnline(userId);
+        userPresenceService.markOnline(userId, session.getId()); // pass sessionId
 
         Map<String, Object> response = new HashMap<>();
         response.put("type", "register_success");
@@ -183,6 +181,14 @@ public class MessageWebSocketHandler implements WebSocketHandler {
             return;
         }
 
+        // Track presence watch: userId is now watching receiver's status
+        if (receiver != null && !receiver.trim().isEmpty()) {
+            presenceWatchers
+                .computeIfAbsent(receiver, k -> ConcurrentHashMap.newKeySet())
+                .add(userId);
+            System.out.println("[MessageWS] User " + userId + " is now watching presence of user " + receiver);
+        }
+
         List<ChatMessageView> messages = chatMessageService.getMessagesForUser(userId, sender, receiver);
 
         Map<String, Object> response = new HashMap<>();
@@ -191,6 +197,7 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         response.put("data", messages);
 
         if (receiver != null && !receiver.trim().isEmpty()) {
+            // Always send the LIVE current status at request time
             response.put("receiverStatus", userPresenceService.getPresence(receiver));
         }
         if (sender != null && !sender.trim().isEmpty() && !sender.equals(userId)) {
@@ -288,9 +295,10 @@ public class MessageWebSocketHandler implements WebSocketHandler {
         userSessions.entrySet().removeIf(entry -> {
             if (entry.getValue().equals(session)) {
                 String userId = entry.getKey();
-                userPresenceService.markOffline(userId);
-                // Record disconnect time so missed messages can be delivered on next reconnect
+                userPresenceService.markOffline(userId, session.getId()); // pass sessionId
                 lastDisconnectTime.put(userId, LocalDateTime.now());
+                // Remove this user from all watcher sets they were in
+                presenceWatchers.values().forEach(watchers -> watchers.remove(userId));
                 System.out.println("[MessageWS] Session removed, disconnect time recorded for user: " + userId);
                 return true;
             }
@@ -327,12 +335,17 @@ public class MessageWebSocketHandler implements WebSocketHandler {
     // ── Presence broadcast ────────────────────────────────────────────────────
 
     /**
-     * Called by UserPresenceService whenever a user goes online or offline.
-     * Pushes a "presence_update" event to every OTHER connected user so their
-     * UI can reflect the change in real time (e.g., show online dot, update last seen).
+     * Called by UserPresenceService whenever any user's presence changes.
+     *
+     * Two-pass broadcast:
+     *  1. Push to ALL connected users (generic contacts list update)
+     *  2. Push an EXTRA targeted update to any user who is actively
+     *     watching this user (e.g., has their chat open) — this fixes
+     *     the case where receiverStatus is stale after a get_messages call.
      */
     private void broadcastPresenceChange(String changedUserId, boolean isOnline) {
         Map<String, Object> presence = userPresenceService.getPresence(changedUserId);
+
         Map<String, Object> push = new HashMap<>();
         push.put("type", "presence_update");
         push.put("presence", presence);
@@ -342,7 +355,6 @@ public class MessageWebSocketHandler implements WebSocketHandler {
             String connectedUserId = entry.getKey();
             WebSocketSession session = entry.getValue();
 
-            // Skip the user whose presence changed — notify everyone else
             if (connectedUserId.equals(changedUserId)) continue;
             if (session == null || !session.isOpen()) continue;
 
@@ -355,16 +367,36 @@ public class MessageWebSocketHandler implements WebSocketHandler {
             }
         }
 
-        System.out.println("[MessageWS] Presence change broadcasted — user: " + changedUserId
-                + " is now " + (isOnline ? "ONLINE" : "OFFLINE")
-                + " — notified " + notified + " connected user(s).");
+        // Extra targeted push to watchers (users actively viewing a chat with changedUserId)
+        Set<String> watchers = presenceWatchers.get(changedUserId);
+        if (watchers != null && !watchers.isEmpty()) {
+            Map<String, Object> watcherPush = new HashMap<>();
+            watcherPush.put("type", "receiver_status_update");
+            watcherPush.put("presence", presence);
+
+            for (String watcherUserId : watchers) {
+                WebSocketSession watcherSession = userSessions.get(watcherUserId);
+                if (watcherSession == null || !watcherSession.isOpen()) continue;
+                try {
+                    send(watcherSession, watcherPush);
+                    System.out.println("[MessageWS] receiver_status_update sent to watcher "
+                            + watcherUserId + " about user " + changedUserId
+                            + " — isOnline=" + isOnline);
+                } catch (Exception e) {
+                    System.err.println("[MessageWS] Failed to send receiver_status_update to "
+                            + watcherUserId + ": " + e.getMessage());
+                }
+            }
+        }
+
+        System.out.println("[MessageWS] Presence broadcasted — user: " + changedUserId
+                + " isOnline=" + isOnline
+                + " — notified " + notified + " user(s), watchers=" + (watchers != null ? watchers.size() : 0));
     }
 
     @PostConstruct
     public void init() {
-        // Register this handler as the presence change listener.
-        // Whenever any user goes online/offline, broadcast it to all other connected users.
-        userPresenceService.setPresenceChangeListener(this::broadcastPresenceChange);
+        userPresenceService.addPresenceChangeListener(this::broadcastPresenceChange);
         System.out.println("[MessageWS] Presence change listener registered.");
     }
 }

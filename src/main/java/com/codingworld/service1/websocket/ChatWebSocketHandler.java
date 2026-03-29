@@ -2,6 +2,7 @@ package com.codingworld.service1.websocket;
 
 import com.codingworld.service1.service.UserPresenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -28,6 +29,13 @@ public class ChatWebSocketHandler implements WebSocketHandler {
     @Autowired
     private UserPresenceService userPresenceService;
 
+    @PostConstruct
+    public void init() {
+        // Register presence broadcast for users connected on /chat endpoint
+        userPresenceService.addPresenceChangeListener(this::broadcastPresenceChange);
+        System.out.println("[ChatWS] Presence change listener registered.");
+    }
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         lastPongTime.put(session.getId(), System.currentTimeMillis());
@@ -52,7 +60,6 @@ public class ChatWebSocketHandler implements WebSocketHandler {
             if ("login".equals(type)) {
                 String userId = (String) messageData.get("userId");
                 if (userId != null) {
-                    // Clean up any old stale session for this user
                     WebSocketSession oldSession = userSessions.get(userId);
                     if (oldSession != null && !oldSession.getId().equals(session.getId())) {
                         System.out.println("[ChatWS] Replacing stale session for user: " + userId);
@@ -60,7 +67,7 @@ public class ChatWebSocketHandler implements WebSocketHandler {
                     }
 
                     userSessions.put(userId, session);
-                    userPresenceService.markOnline(userId);
+                    userPresenceService.markOnline(userId, session.getId()); // pass sessionId
 
                     Map<String, Object> response = new HashMap<>();
                     response.put("type", "login_success");
@@ -156,12 +163,46 @@ public class ChatWebSocketHandler implements WebSocketHandler {
         return session != null && session.isOpen();
     }
 
+    // ── Presence broadcast ────────────────────────────────────────────────────
+
+    /**
+     * Pushes a "presence_update" event to every OTHER user connected on /chat
+     * whenever any user goes online or offline.
+     */
+    private void broadcastPresenceChange(String changedUserId, boolean isOnline) {
+        Map<String, Object> presence = userPresenceService.getPresence(changedUserId);
+        Map<String, Object> push = new HashMap<>();
+        push.put("type", "presence_update");
+        push.put("presence", presence);
+
+        int notified = 0;
+        for (Map.Entry<String, WebSocketSession> entry : userSessions.entrySet()) {
+            String connectedUserId = entry.getKey();
+            WebSocketSession session = entry.getValue();
+
+            if (connectedUserId.equals(changedUserId)) continue;
+            if (session == null || !session.isOpen()) continue;
+
+            try {
+                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(push)));
+                notified++;
+            } catch (Exception e) {
+                System.err.println("[ChatWS] Failed to push presence update to user "
+                        + connectedUserId + ": " + e.getMessage());
+            }
+        }
+
+        System.out.println("[ChatWS] Presence change broadcasted — user: " + changedUserId
+                + " is now " + (isOnline ? "ONLINE" : "OFFLINE")
+                + " — notified " + notified + " connected user(s) on /chat.");
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private void removeSession(WebSocketSession session) {
         userSessions.entrySet().removeIf(entry -> {
             if (entry.getValue().equals(session)) {
-                userPresenceService.markOffline(entry.getKey());
+                userPresenceService.markOffline(entry.getKey(), session.getId()); // pass sessionId
                 System.out.println("[ChatWS] Session removed for user: " + entry.getKey());
                 return true;
             }

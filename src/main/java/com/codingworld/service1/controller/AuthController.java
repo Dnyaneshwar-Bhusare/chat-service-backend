@@ -4,10 +4,15 @@ import com.codingworld.service1.model.Response;
 import com.codingworld.service1.model.User;
 import com.codingworld.service1.model.dto.LoginRequest;
 import com.codingworld.service1.model.dto.LoginResponse;
+import com.codingworld.service1.service.UserPresenceService;
 import com.codingworld.service1.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/")
@@ -15,6 +20,9 @@ public class AuthController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private UserPresenceService userPresenceService;
 
     @PostMapping("login")
     public Response login(@RequestBody LoginRequest login) {
@@ -75,7 +83,22 @@ public class AuthController {
     @GetMapping("/users")
     public Response users() {
         try {
-            Response response = new Response("1", "ok", userService.getAllUsers());
+            List<User> users = userService.getAllUsers();
+
+            List<Map<String, Object>> usersWithPresence = users.stream().map(user -> {
+                Map<String, Object> userMap = new LinkedHashMap<>();
+                userMap.put("userId",    user.getUserId());
+                userMap.put("username",  user.getUsername());
+                userMap.put("email",     user.getEmail());
+                userMap.put("mobileno",  user.getMobileno());
+                userMap.put("publicKey", user.getPublicKey());
+                userMap.put("profilePic", user.getProfilePic());
+                userMap.put("isOnline",  userPresenceService.isOnline(user.getUserId()));
+                userMap.put("lastSeen",  userPresenceService.getLastSeen(user.getUserId()));
+                return userMap;
+            }).toList();
+
+            Response response = new Response("1", "ok", usersWithPresence);
             System.out.println("[INFO] /users API response: " + response);
             return response;
         } catch (Exception e) {
@@ -83,6 +106,25 @@ public class AuthController {
             Response errorResponse = new Response("0", "Failed to fetch users", null);
             System.out.println("[INFO] /users API response: " + errorResponse);
             return errorResponse;
+        }
+    }
+
+    /**
+     * GET /user/presence/{userId}
+     * Returns the real-time online status and last seen of a specific user.
+     */
+    @GetMapping("/user/presence/{userId}")
+    public Response getUserPresence(@PathVariable String userId) {
+        try {
+            if (userId == null || userId.trim().isEmpty()) {
+                return new Response("0", "userId is required", null);
+            }
+            Map<String, Object> presence = userPresenceService.getPresence(userId);
+            System.out.println("[INFO] /user/presence/" + userId + " response: " + presence);
+            return new Response("1", "ok", presence);
+        } catch (Exception e) {
+            System.err.println("Error fetching presence for user " + userId + ": " + e.getMessage());
+            return new Response("0", "Failed to fetch presence", null);
         }
     }
 

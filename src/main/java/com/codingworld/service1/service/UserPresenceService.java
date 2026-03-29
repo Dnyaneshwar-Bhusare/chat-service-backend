@@ -6,14 +6,18 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 
 @Service
 public class UserPresenceService {
 
-    private final Map<String, LocalDateTime> onlineUsers = new ConcurrentHashMap<>();
+    // userId → set of active sessionIds (a user can be connected on both /chat and /ws/messages)
+    private final Map<String, Set<String>> onlineUserSessions = new ConcurrentHashMap<>();
 
     private static final DateTimeFormatter FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -21,47 +25,73 @@ public class UserPresenceService {
     @Autowired
     private UserDao userDao;
 
+    private final List<BiConsumer<String, Boolean>> presenceChangeListeners =
+            new CopyOnWriteArrayList<>();
+
+    public void addPresenceChangeListener(BiConsumer<String, Boolean> listener) {
+        presenceChangeListeners.add(listener);
+        System.out.println("[Presence] Listener registered, total listeners: " + presenceChangeListeners.size());
+    }
+
     /**
-     * Callback registered by MessageWebSocketHandler.
-     * Called whenever any user's presence changes (online/offline).
-     * BiConsumer<changedUserId, isOnline>
+     * Mark a specific session of a user as online.
+     * Only broadcasts "online" on the FIRST session (i.e., user was truly offline before).
      */
-    private BiConsumer<String, Boolean> presenceChangeListener;
+    public void markOnline(String userId, String sessionId) {
+        boolean wasOffline = !onlineUserSessions.containsKey(userId)
+                || onlineUserSessions.get(userId).isEmpty();
 
-    public void setPresenceChangeListener(BiConsumer<String, Boolean> listener) {
-        this.presenceChangeListener = listener;
-    }
+        onlineUserSessions
+                .computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet())
+                .add(sessionId);
 
-    public void markOnline(String userId) {
-        onlineUsers.put(userId, LocalDateTime.now());
-        System.out.println("[Presence] User " + userId + " is now ONLINE");
-        notifyPresenceChange(userId, true);
-    }
+        System.out.println("[Presence] User " + userId + " session " + sessionId
+                + " marked online. Total sessions: " + onlineUserSessions.get(userId).size());
 
-    public void markOffline(String userId) {
-        LocalDateTime now = LocalDateTime.now();
-        onlineUsers.remove(userId);
-        try {
-            userDao.updateLastSeen(userId, now);
-        } catch (Exception e) {
-            System.err.println("[Presence] Failed to update last_seen for user " + userId + ": " + e.getMessage());
+        if (wasOffline) {
+            System.out.println("[Presence] User " + userId + " is now ONLINE");
+            notifyPresenceChange(userId, true);
         }
-        System.out.println("[Presence] User " + userId + " is now OFFLINE — last seen: " + now.format(FORMATTER));
-        notifyPresenceChange(userId, false);
+    }
+
+    /**
+     * Mark a specific session of a user as offline.
+     * Only broadcasts "offline" when the LAST session disconnects.
+     */
+    public void markOffline(String userId, String sessionId) {
+        Set<String> sessions = onlineUserSessions.get(userId);
+        if (sessions == null) return;
+
+        sessions.remove(sessionId);
+        System.out.println("[Presence] User " + userId + " session " + sessionId
+                + " removed. Remaining sessions: " + sessions.size());
+
+        if (sessions.isEmpty()) {
+            onlineUserSessions.remove(userId);
+            LocalDateTime now = LocalDateTime.now();
+            try {
+                userDao.updateLastSeen(userId, now);
+            } catch (Exception e) {
+                System.err.println("[Presence] Failed to update last_seen for user " + userId + ": " + e.getMessage());
+            }
+            System.out.println("[Presence] User " + userId + " is now OFFLINE — last seen: " + now.format(FORMATTER));
+            notifyPresenceChange(userId, false);
+        }
     }
 
     private void notifyPresenceChange(String userId, boolean isOnline) {
-        if (presenceChangeListener != null) {
+        for (BiConsumer<String, Boolean> listener : presenceChangeListeners) {
             try {
-                presenceChangeListener.accept(userId, isOnline);
+                listener.accept(userId, isOnline);
             } catch (Exception e) {
-                System.err.println("[Presence] Failed to notify presence change for user " + userId + ": " + e.getMessage());
+                System.err.println("[Presence] Listener error for user " + userId + ": " + e.getMessage());
             }
         }
     }
 
     public boolean isOnline(String userId) {
-        return onlineUsers.containsKey(userId);
+        Set<String> sessions = onlineUserSessions.get(userId);
+        return sessions != null && !sessions.isEmpty();
     }
 
     public String getLastSeen(String userId) {
@@ -78,8 +108,9 @@ public class UserPresenceService {
 
     public Map<String, Object> getPresence(String userId) {
         boolean online = isOnline(userId);
-        Map<String, Object> presence = new ConcurrentHashMap<>();
-        presence.put("userId", userId);
+        // Use HashMap (not ConcurrentHashMap) — ConcurrentHashMap does NOT allow null values
+        Map<String, Object> presence = new java.util.HashMap<>();
+        presence.put("userId",   userId);
         presence.put("isOnline", online);
         presence.put("lastSeen", online ? null : getLastSeen(userId));
         return presence;
