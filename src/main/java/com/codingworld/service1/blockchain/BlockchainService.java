@@ -2,53 +2,58 @@ package com.codingworld.service1.blockchain;
 
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+// import org.springframework.beans.factory.annotation.Value;  // GANACHE DISABLED
 import org.springframework.stereotype.Service;
-import org.web3j.crypto.Hash;
-import org.web3j.protocol.Web3j;
-import org.web3j.protocol.core.DefaultBlockParameterName;
-import org.web3j.protocol.core.methods.request.Transaction;
-import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt;
-import org.web3j.protocol.core.methods.response.EthSendTransaction;
-import org.web3j.protocol.core.methods.response.TransactionReceipt;
-import org.web3j.protocol.http.HttpService;
-import org.web3j.tx.ClientTransactionManager;
-import org.web3j.tx.TransactionManager;
-import org.web3j.tx.gas.StaticGasProvider;
-
-import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Optional;
+// import org.web3j.crypto.Hash;                              // GANACHE DISABLED
+// import org.web3j.protocol.Web3j;                           // GANACHE DISABLED
+// import org.web3j.protocol.core.DefaultBlockParameterName;  // GANACHE DISABLED
+// import org.web3j.protocol.core.methods.request.Transaction; // GANACHE DISABLED
+// import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt; // GANACHE DISABLED
+// import org.web3j.protocol.core.methods.response.EthSendTransaction;       // GANACHE DISABLED
+// import org.web3j.protocol.core.methods.response.TransactionReceipt;       // GANACHE DISABLED
+// import org.web3j.protocol.http.HttpService;                // GANACHE DISABLED
+// import org.web3j.tx.ClientTransactionManager;              // GANACHE DISABLED
+// import org.web3j.tx.TransactionManager;                    // GANACHE DISABLED
+// import org.web3j.tx.gas.StaticGasProvider;                 // GANACHE DISABLED
+// import java.math.BigInteger;                               // GANACHE DISABLED
+// import java.nio.charset.StandardCharsets;                  // GANACHE DISABLED
+// import java.util.List;                                     // GANACHE DISABLED
+// import java.util.Optional;                                 // GANACHE DISABLED
 
 @Service
 public class BlockchainService {
 
-    @Value("${blockchain.ganache.rpc-url}")
-    private String ganacheRpcUrl;
+    // =========================================================
+    // GANACHE DISABLED FOR TESTING — uncomment everything when Ganache is up
+    // =========================================================
 
-    @Value("${blockchain.ganache.gas-price}")
-    private long gasPrice;
+    // @Value("${blockchain.ganache.rpc-url}")
+    // private String ganacheRpcUrl;
 
-    @Value("${blockchain.ganache.gas-limit}")
-    private long gasLimit;
+    // @Value("${blockchain.ganache.gas-price}")
+    // private long gasPrice;
+
+    // @Value("${blockchain.ganache.gas-limit}")
+    // private long gasLimit;
 
     @Autowired
     private BlockchainConfigDao configDao;
 
-    private Web3j web3j;
-    private ChatVerification contract;
-    private String deployerAddress;
+    // private Web3j web3j;
+    // private ChatVerification contract;
+    // private String deployerAddress;
 
-    private static final String KEY_CONTRACT_ADDRESS = "contract_address";
-    private static final String KEY_DEPLOYER_ADDRESS = "deployer_address";
-    private static final String KEY_BINARY_FINGERPRINT = "binary_fingerprint";
-
-    // First 20 chars of BINARY acts as a cheap fingerprint to detect binary changes
-    private static final String CURRENT_BINARY_FINGERPRINT = ChatVerification.BINARY.substring(0, 20);
+    // private static final String KEY_CONTRACT_ADDRESS     = "contract_address";
+    // private static final String KEY_DEPLOYER_ADDRESS     = "deployer_address";
+    // private static final String KEY_BINARY_FINGERPRINT   = "binary_fingerprint";
+    // private static final String CURRENT_BINARY_FINGERPRINT = ChatVerification.BINARY.substring(0, 20);
 
     @PostConstruct
     public void init() {
+        System.out.println("⚠️  BlockchainService: Ganache is DISABLED for testing. All blockchain calls are no-ops.");
+
+        // ---- GANACHE INIT COMMENTED OUT FOR TESTING ----
+        /*
         try {
             configDao.ensureTableExists();
 
@@ -85,9 +90,6 @@ public class BlockchainService {
             contract = ChatVerification.load(contractAddress, web3j, txManager, gasProvider);
 
             // Smoke-test: exercise BOTH read and write code paths against the on-chain bytecode.
-            // verifyHash is a view — it costs no gas and never writes state.
-            // storeHash is tested via eth_call (simulated, no gas, no state change) so we catch
-            // invalid JUMP / opcode errors in the write path before the first real message arrives.
             try {
                 // Read path
                 contract.verifyHash(new byte[32]).send();
@@ -110,8 +112,6 @@ public class BlockchainService {
                     );
                 org.web3j.protocol.core.methods.response.EthCall callResult =
                     web3j.ethCall(callTx, org.web3j.protocol.core.DefaultBlockParameterName.LATEST).send();
-                // A revert here (e.g. "Hash already exists") is fine — the bytecode executed correctly.
-                // An error containing "invalid JUMP" or "invalid opcode" means stale bytecode.
                 if (callResult.hasError()) {
                     String callErr = callResult.getError().getMessage();
                     if (callErr != null && (callErr.contains("invalid JUMP") || callErr.contains("invalid opcode"))) {
@@ -120,8 +120,7 @@ public class BlockchainService {
                 }
                 System.out.println("✅ Contract smoke-test passed (read + write paths).");
             } catch (Exception smokeEx) {
-                System.out.println("✅ Contract smoke-test passed (read + write paths). (" + contractAddress
-                        + "): " );
+                System.out.println("✅ Contract smoke-test passed (read + write paths). (" + contractAddress + "): ");
                 configDao.delete(KEY_CONTRACT_ADDRESS);
                 contractAddress = deployContractRaw();
                 configDao.set(KEY_CONTRACT_ADDRESS, contractAddress);
@@ -137,9 +136,12 @@ public class BlockchainService {
             System.err.println("❌ BlockchainService init failed: " + e.getClass().getName() + ": " + e.getMessage());
             contract = null;
         }
+        */
     }
 
-    /** Returns a verified-working contract address, deploying if not yet in DB. */
+    // ---- GANACHE METHODS COMMENTED OUT FOR TESTING ----
+
+    /*
     @SuppressWarnings("unused")
     private String loadOrDeploy(TransactionManager txManager, StaticGasProvider gasProvider) throws Exception {
         String contractAddress = configDao.get(KEY_CONTRACT_ADDRESS);
@@ -153,10 +155,6 @@ public class BlockchainService {
         return contractAddress;
     }
 
-    /**
-     * Deploys the contract by sending a raw eth_sendTransaction with the bytecode as data.
-     * Returns the deployed contract address.
-     */
     private String deployContractRaw() throws Exception {
         String binary = ChatVerification.BINARY;
         System.out.println("📄 Deploying binary length: " + binary.length() / 2 + " bytes");
@@ -203,99 +201,81 @@ public class BlockchainService {
         throw new RuntimeException("Timed out waiting for deploy receipt for tx: " + txHash);
     }
 
+    private byte[] toBytes32(byte[] hashBytes) {
+        if (hashBytes.length == 32) return hashBytes;
+        byte[] padded = new byte[32];
+        int srcLen = Math.min(hashBytes.length, 32);
+        int destOffset = 32 - srcLen;
+        System.arraycopy(hashBytes, 0, padded, destOffset, srcLen);
+        return padded;
+    }
+    */
+
+    // =========================================================
+    // NO-OP STUBS — active while Ganache is disabled
+    // =========================================================
+
     /**
-     * Stores the keccak256 hash of a message on the blockchain.
-     *
-     * @param message  The raw (encrypted) message content to hash and store
-     * @param receiver The ETH address of the message recipient.
-     *                 Pass null or empty to fall back to the deployer address.
+     * NO-OP stub while Ganache is disabled.
+     * Original: hashes the message and stores it on-chain via ChatVerification.storeHash().
      */
     public String storeMessageHash(String message, String receiver) throws Exception {
+        System.out.println("⚠️  BlockchainService.storeMessageHash() called but Ganache is disabled — skipping.");
+        return "ganache-disabled";
+
+        /*  --- ORIGINAL IMPLEMENTATION (restore when Ganache is enabled) ---
         if (message == null || message.isEmpty()) {
             throw new IllegalArgumentException("Message cannot be empty");
         }
         if (contract == null) {
             throw new IllegalStateException("Blockchain contract is not initialized");
         }
-
-        // BUG FIX: use the actual receiver address, not always deployerAddress
         String receiverAddress = (receiver != null && receiver.startsWith("0x") && receiver.length() == 42)
-                ? receiver
-                : deployerAddress;
-
+                ? receiver : deployerAddress;
         byte[] hashBytes = toBytes32(Hash.sha3(message.getBytes(StandardCharsets.UTF_8)));
         TransactionReceipt receipt = contract.storeHash(hashBytes, receiverAddress).send();
         String txHash = receipt.getTransactionHash();
-        System.out.println("📦 Message hash stored on blockchain. txHash: " + txHash
-                + " | receiver: " + receiverAddress);
+        System.out.println("📦 Message hash stored on blockchain. txHash: " + txHash + " | receiver: " + receiverAddress);
         return txHash;
+        */
     }
 
     /**
-     * Verifies a message hash on the blockchain.
-     * Returns timestamp > 0 if verified, 0 if not found.
-     *
-     * @param message The raw message content (same value that was passed to storeMessageHash)
+     * NO-OP stub while Ganache is disabled.
+     * Original: verifies a message hash on-chain via ChatVerification.verifyHash().
      */
     public long verifyMessageHash(String message) throws Exception {
+        System.out.println("⚠️  BlockchainService.verifyMessageHash() called but Ganache is disabled — returning 0.");
+        return 0L;
+
+        /*  --- ORIGINAL IMPLEMENTATION (restore when Ganache is enabled) ---
         if (contract == null) {
             throw new IllegalStateException("Blockchain contract is not initialized");
         }
         byte[] hashBytes = toBytes32(Hash.sha3(message.getBytes(StandardCharsets.UTF_8)));
         BigInteger timestamp = contract.verifyHash(hashBytes).send();
         return timestamp.longValue();
+        */
     }
 
+    /** Returns false while Ganache is disabled. Original: return contract != null; */
     public boolean isReady() {
-        return contract != null;
+        return false;
     }
 
+    /** Returns null while Ganache is disabled. Original: return contract.getContractAddress(); */
     public String getContractAddress() {
-        return contract != null ? contract.getContractAddress() : null;
+        return null;
     }
 
+    /** Returns null while Ganache is disabled. Original: return deployerAddress; */
     public String getDeployerAddress() {
-        return deployerAddress;
+        return null;
     }
 
-    /**
-     * Called when a contract interaction fails with a genuine EVM infrastructure error.
-     * Clears the stored contract address from DB and redeploys immediately.
-     * Returns the new deployment tx hash.
-     */
+    /** NO-OP stub while Ganache is disabled. */
     public String handleContractFailure() {
-        try {
-            configDao.delete(KEY_CONTRACT_ADDRESS);
-            contract = null;
-
-            TransactionManager txManager = new ClientTransactionManager(web3j, deployerAddress);
-            StaticGasProvider gasProvider = new StaticGasProvider(
-                    BigInteger.valueOf(gasPrice), BigInteger.valueOf(gasLimit));
-
-            String newAddress = deployContractRaw();
-            contract = ChatVerification.load(newAddress, web3j, txManager, gasProvider);
-            configDao.set(KEY_CONTRACT_ADDRESS, newAddress);
-            System.out.println("✅ Contract redeployed at: " + newAddress);
-            return newAddress;
-        } catch (Exception ex) {
-            System.err.println("❌ Redeployment in handleContractFailure failed: " + ex.getMessage());
-            contract = null;
-            return null;
-        }
-    }
-
-    /**
-     * BUG FIX: previous version used Numeric.hexStringToByteArray which expects a hex string,
-     * but Hash.sha3(byte[]) already returns a 32-byte array — not a hex string.
-     * We now accept the raw byte[] directly from Hash.sha3().
-     */
-    private byte[] toBytes32(byte[] hashBytes) {
-        if (hashBytes.length == 32) return hashBytes;
-        // Pad or truncate to exactly 32 bytes (right-aligned / left-zero-padded)
-        byte[] padded = new byte[32];
-        int srcLen = Math.min(hashBytes.length, 32);
-        int destOffset = 32 - srcLen;
-        System.arraycopy(hashBytes, 0, padded, destOffset, srcLen);
-        return padded;
+        System.out.println("⚠️  BlockchainService.handleContractFailure() called but Ganache is disabled — skipping.");
+        return null;
     }
 }
