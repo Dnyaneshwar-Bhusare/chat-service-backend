@@ -83,6 +83,4 @@ Desktop.ini
 *.seed
 *.pid.lock
 
-# Spring Boot - sensitive config files (contain secrets/passwords)
-src/main/resources/application.properties
-src/main/resources/application.yml
+
