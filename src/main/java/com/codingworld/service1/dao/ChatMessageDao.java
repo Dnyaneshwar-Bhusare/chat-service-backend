@@ -84,6 +84,16 @@ public class ChatMessageDao {
         return namedParameterJdbcTemplate.update(QueryConstants.CHAT_DELETE_ALL_FOR_USER, params);
     }
 
+    public boolean updateMessageByChatId(String chatId, String message, String messageToSelf, java.time.LocalDateTime updatedTs) {
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("chatId", chatId);
+        params.addValue("message", message);
+        params.addValue("messageToSelf", messageToSelf);
+        params.addValue("updatedTs", java.sql.Timestamp.valueOf(updatedTs));
+        int rows = namedParameterJdbcTemplate.update(QueryConstants.CHAT_UPDATE_MESSAGE_BY_ID, params);
+        return rows > 0;
+    }
+
     private static class ChatMessageViewRowMapper implements RowMapper<ChatMessageView> {
         @Override
         public ChatMessageView mapRow(ResultSet rs, int rowNum) throws SQLException {

@@ -184,4 +184,21 @@ public class QueryConstants {
 
     public static final String OTP_DELETE_BY_EMAIL =
             "DELETE FROM otp_valadator WHERE email = :email";
+
+    // ── FCM Token ────────────────────────────────────────────────────────────
+    public static final String USER_UPDATE_FCM_TOKEN =
+            "UPDATE users SET fcm_token = :token, fcm_platform = :platform, fcm_token_updated_at = NOW() WHERE UserID = :userId";
+
+    public static final String USER_CLEAR_DEAD_FCM_TOKEN =
+            "UPDATE users SET fcm_token = NULL, fcm_platform = NULL, fcm_token_updated_at = NOW() WHERE fcm_token = :token";
+
+    public static final String USER_GET_BY_ID_WITH_FCM =
+            "SELECT UserID, username, email, mobileno, profile_pic, eth_address, public_key, fcm_token, fcm_platform, fcm_token_updated_at " +
+            "FROM users WHERE UserID = :userId";
+
+    public static final String CHAT_UPDATE_MESSAGE_BY_ID =
+        "UPDATE chat_table SET message = :message, " +
+        "message_1 = COALESCE(:messageToSelf, message_1), " +
+        "edited = true " +
+        "WHERE chat_id = :chatId";
 }

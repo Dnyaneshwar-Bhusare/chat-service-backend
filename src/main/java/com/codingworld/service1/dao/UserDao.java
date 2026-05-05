@@ -106,6 +106,25 @@ public class UserDao {
         return rows > 0;
     }
 
+    public int updateFcmToken(String userId, String token, String platform) {
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("userId", userId);
+        params.addValue("token", token);
+        params.addValue("platform", platform);
+        return namedParameterJdbcTemplate.update(QueryConstants.USER_UPDATE_FCM_TOKEN, params);
+    }
+
+    public int clearByDeadToken(String token) {
+        MapSqlParameterSource params = new MapSqlParameterSource("token", token);
+        return namedParameterJdbcTemplate.update(QueryConstants.USER_CLEAR_DEAD_FCM_TOKEN, params);
+    }
+
+    public User getUserByIdWithFcm(String userId) {
+        MapSqlParameterSource params = new MapSqlParameterSource("userId", userId);
+        List<User> users = namedParameterJdbcTemplate.query(QueryConstants.USER_GET_BY_ID_WITH_FCM, params, new UserFcmRowMapper());
+        return users.isEmpty() ? null : users.get(0);
+    }
+
     private static class UserRowMapper implements RowMapper<User> {
         @Override
         public User mapRow(ResultSet rs, int rowNum) throws SQLException {
@@ -144,6 +163,25 @@ public class UserDao {
             user.setProfilePic(rs.getString("profile_pic"));
             user.setEthAddress(rs.getString("eth_address"));
             user.setPublicKey(rs.getString("public_key"));
+            return user;
+        }
+    }
+
+    private static class UserFcmRowMapper implements RowMapper<User> {
+        @Override
+        public User mapRow(ResultSet rs, int rowNum) throws SQLException {
+            User user = new User();
+            user.setUserId(rs.getString("UserID"));
+            user.setUsername(rs.getString("username"));
+            user.setEmail(rs.getString("email"));
+            user.setMobileno(rs.getString("mobileno"));
+            user.setProfilePic(rs.getString("profile_pic"));
+            user.setEthAddress(rs.getString("eth_address"));
+            user.setPublicKey(rs.getString("public_key"));
+            user.setFcmToken(rs.getString("fcm_token"));
+            user.setFcmPlatform(rs.getString("fcm_platform"));
+            java.sql.Timestamp ts = rs.getTimestamp("fcm_token_updated_at");
+            user.setFcmTokenUpdatedAt(ts != null ? ts.toLocalDateTime() : null);
             return user;
         }
     }

@@ -8,6 +8,8 @@ import com.codingworld.service1.model.User;
 import com.codingworld.service1.model.dto.ChatMessageRequest;
 import com.codingworld.service1.model.dto.VerifyRequest;
 import com.codingworld.service1.service.ChatMessageService;
+import com.codingworld.service1.service.FcmService;
+import com.codingworld.service1.service.UserPresenceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,6 +27,12 @@ public class ChatController {
 
     @Autowired
     private UserDao userDao;
+
+    @Autowired
+    private FcmService fcmService;
+
+    @Autowired
+    private UserPresenceService userPresenceService;
 
     @PostMapping("/sendMessage")
     public Response sendMessage(@RequestBody ChatMessageRequest message) {
@@ -82,6 +90,18 @@ public class ChatController {
                     txHash
             );
             System.out.println("Chat message saved with ID: " + chatId + " and txHash: " + txHash);
+
+            // Trigger async FCM push to receiver (skip if receiver is online via WebSocket)
+            try {
+                if (!userPresenceService.isOnline(message.getTo())) {
+                    User sender = userDao.getUserByIdWithFcm(message.getFrom());
+                    User receiver = userDao.getUserByIdWithFcm(message.getTo());
+                    if (sender != null && receiver != null) {
+                        fcmService.sendChatNotificationAsync(receiver, sender, chatId, message.getTimestamp());
+                    }
+                }
+            } catch (Exception ignored) { /* never block API on push failure */ }
+
         } catch (Exception e) {
             System.err.println("❌ Failed to save chat message to DB: " + e.getMessage());
             return new Response("0", "Failed to save message: " + e.getMessage(), null);

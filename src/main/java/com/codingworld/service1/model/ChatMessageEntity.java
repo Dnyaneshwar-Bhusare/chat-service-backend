@@ -21,6 +21,8 @@ public class ChatMessageEntity {
     private String algo;
     private String txHash;
     private LocalDateTime createdTs;
+    private Boolean edited;
+    private LocalDateTime updatedTs;
 
     // Constructor without chatId and timestamp (auto-generated)
     public ChatMessageEntity(String message, String fromUser, String toUser, String algo, String txHash) {

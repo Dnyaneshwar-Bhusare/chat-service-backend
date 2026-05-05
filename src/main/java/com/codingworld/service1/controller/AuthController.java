@@ -1,5 +1,6 @@
 package com.codingworld.service1.controller;
 
+import com.codingworld.service1.dao.UserDao;
 import com.codingworld.service1.model.Response;
 import com.codingworld.service1.model.User;
 import com.codingworld.service1.model.dto.LoginRequest;
@@ -24,6 +25,9 @@ public class AuthController {
     @Autowired
     private UserPresenceService userPresenceService;
 
+    @Autowired
+    private UserDao userDao;
+
     @PostMapping("login")
     public Response login(@RequestBody LoginRequest login) {
         try {
@@ -41,6 +45,13 @@ public class AuthController {
             User authenticatedUser = userService.authenticateUser(email, password, publicKey);
 
             if (authenticatedUser != null) {
+                // Optional: persist FCM token if provided
+                if (login.getFcmToken() != null && !login.getFcmToken().isBlank()) {
+                    try {
+                        userDao.updateFcmToken(authenticatedUser.getUserId(), login.getFcmToken(), login.getPlatform());
+                    } catch (Exception ignored) { }
+                }
+
                 LoginResponse loginResponse = new LoginResponse(
                         authenticatedUser.getUserId(),
                         authenticatedUser.getUsername(),

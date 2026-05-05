@@ -1,9 +1,12 @@
 package com.codingworld.service1.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
 
 @Data
 @NoArgsConstructor
@@ -18,6 +21,14 @@ public class User {
     private String profilePic;
     private String ethAddress;
     private String publicKey;
+
+    // FCM fields
+    @JsonIgnore
+    private String fcmToken;
+    @JsonIgnore
+    private String fcmPlatform;
+    @JsonIgnore
+    private LocalDateTime fcmTokenUpdatedAt;
 
     public User(String username, String email, String mobileno) {
         this.username = username;
